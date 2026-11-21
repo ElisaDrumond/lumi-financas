@@ -12,7 +12,7 @@ export function accountBalance(data:FinanceData,account:string|number=''){
  +sum(data.adjustments,a=>a.amount_cents)
  +sum(data.goalMovements,m=>(m.direction==='deposit'?-1:1)*m.amount_cents);
 }
-export type CarryoverItem={key:string;kind:'occurrence'|'transaction'|'installment';id:number;description:string;type:'income'|'expense';goal:boolean;due_on:string;account_id:number|null;account_name:string;amount_cents:number;paid_cents:number;remaining_cents:number};
+export type CarryoverItem={key:string;kind:'occurrence'|'transaction'|'installment';id:number;description:string;type:'income'|'expense';goal:boolean;goal_id?:number|null;due_on:string;account_id:number|null;account_name:string;amount_cents:number;paid_cents:number;remaining_cents:number};
 /** Outstanding prior-period obligations, grouped only in the UI, never copied or re-dated. */
 export function carryoverItems(data:FinanceData,period:string,account:string|number=''):CarryoverItem[]{
  const payments=data.transactionPayments??[];
@@ -23,7 +23,7 @@ export function carryoverItems(data:FinanceData,period:string,account:string|num
  for(const o of data.occurrences){
   if(o.due_on>=period+'-01'||o.status==='paid'||o.status==='cancelled'||!relevant(o.account_id))continue;
   const remaining=Math.max(0,o.amount_cents-o.paid_cents);
-  if(remaining)result.push({key:'occurrence-'+o.id,kind:'occurrence',id:o.id,description:o.description,type:o.type,goal:!!o.goal_id,due_on:o.due_on,account_id:o.account_id,account_name:accountName(o.account_id),amount_cents:o.amount_cents,paid_cents:o.paid_cents,remaining_cents:remaining});
+  if(remaining)result.push({key:'occurrence-'+o.id,kind:'occurrence',id:o.id,description:o.description,type:o.type,goal:!!o.goal_id,goal_id:o.goal_id,due_on:o.due_on,account_id:o.account_id,account_name:accountName(o.account_id),amount_cents:o.amount_cents,paid_cents:o.paid_cents,remaining_cents:remaining});
  }
  for(const t of data.transactions){
   if(t.status!=='planned'||t.date>=period+'-01'||!relevant(t.account_id))continue;
