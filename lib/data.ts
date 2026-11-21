@@ -35,6 +35,30 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
  switch(entity){
   case 'accounts': return run('INSERT INTO accounts(name,type,initial_balance,color) VALUES(?,?,?,?)',text(payload.name),name(payload.type)||'checking',integer(payload.initial_balance??0),name(payload.color)||'#9a8cf5');
   case 'categories': {const type=name(payload.type);if(!['income','expense'].includes(type)) throw Error('Tipo inválido.');return run('INSERT INTO categories(name,type,icon,color) VALUES(?,?,?,?)',text(payload.name),type,'tag',name(payload.color)||'#a48bf5');}
+  case 'category-edit': {
+   const categoryId=id(payload.id),old=db.prepare('SELECT type FROM categories WHERE id=?').get(categoryId) as {type:string}|undefined;
+   if(!old)throw Error('Categoria não encontrada.');
+   const categoryName=text(payload.name);
+   const color=name(payload.color);
+   if(!/^#[0-9a-fA-F]{6}$/.test(color))throw Error('Selecione uma cor válida.');
+   return run('UPDATE categories SET name=?,color=? WHERE id=?',categoryName,color,categoryId);
+  }
+  case 'category-colors': {
+   const entries=payload.colors;
+   if(!Array.isArray(entries)||entries.length>100)throw Error('Lista de cores inválida.');
+   const updates=entries.map(entry=>{
+    if(!entry||typeof entry!=='object')throw Error('Cor inválida.');
+    const item=entry as Record<string,unknown>;
+    const color=name(item.color);
+    if(!/^#[0-9a-fA-F]{6}$/.test(color))throw Error('Cor inválida.');
+    return {id:id(item.id),color};
+   });
+   db.exec('BEGIN IMMEDIATE');
+   try {
+    for(const item of updates)run('UPDATE categories SET color=? WHERE id=?',item.color,item.id);
+    db.exec('COMMIT');return {lastInsertRowid:0};
+   }catch(e){db.exec('ROLLBACK');throw e;}
+  }
   case 'cards': {const closing=integer(payload.closing_day),due=integer(payload.due_day);if(closing<1||closing>28||due<1||due>28)throw Error('Use dias de 1 a 28.');return run('INSERT INTO cards(name,limit_cents,closing_day,due_day,color,account_id) VALUES(?,?,?,?,?,?)',text(payload.name),integer(payload.limit_cents??0),closing,due,name(payload.color)||'#a48bf5',id(payload.account_id,false));}
   case 'transactions': {
    const type=name(payload.type),status=name(payload.status)||'completed';
