@@ -74,3 +74,11 @@ Novos movimentos e progresso da meta são gravados na mesma transação SQLite. 
 Execute `npm test`, `npm run typecheck` e `npm run build`. Os testes usam SQLite temporário, sem criar Nubank/PicPay no banco do usuário. Incluem duas contas, filtros numéricos/string, consolidação, aportes, retiradas, estornos, idempotência, edição mensal/futura, preservação patrimonial e migração de reserva antiga. Não há script/configuração de lint no projeto.
 
 A projeção considera pendências do mês selecionado e parte dos saldos reais atuais; meses intermediários não são simulados. Parcelas sem conta definida só integram a projeção consolidada; parcelas de cartão usam a conta associada ao cartão quando disponível. Transferências diretas entre duas contas continuam fora desta versão; transferências via reserva da meta têm histórico próprio. Reservas antigas são mostradas como valores declarados, sem inferir se já estavam incluídas em algum saldo bancário. Validação visual manual em navegador não foi automatizada.
+
+## Refinamento visual do planejamento
+
+O resumo mensal apresenta três cards principais (disponível, entradas previstas com recebido e saídas previstas com pago), quatro compromissos secundários e uma projeção horizontal com sinal textual e ícone. A composição adapta-se a desktop, tablet e mobile, sem modificar `planningSummary` ou as regras financeiras.
+
+Confirmações de encerramento, ocorrência ignorada, exclusão e estorno usam `ConfirmDialogProvider`, com `<dialog>` modal nativo, foco inicial em Cancelar, Escape, retorno de foco, bloqueio de reenvio, carregamento e mensagens de sucesso/erro. Não há dependência de Radix/shadcn instalada.
+
+Validação do refinamento: TypeScript, build, os oito testes financeiros existentes e Chrome headless em 1440, 768, 390 e 320 px. Foram verificados valores contra o cálculo compartilhado, ausência de overflow dos indicadores, Cancelar/Escape/foco, erro e nova tentativa, carregamento, duplo clique, sucesso e preservação do histórico. Os testes de navegador utilizaram banco temporário separado. O projeto continua sem configuração de lint.

@@ -2,6 +2,7 @@
 import {useState, useMemo} from 'react';
 import Planning from './Planning';
 import Goals from './Goals';
+import {useConfirm} from './ConfirmDialog';
 import {accountBalance,planningSummary} from '@/lib/finance';
 import {LayoutDashboard,ArrowLeftRight,Layers3,CreditCard,Target,Wallet,Plus,TrendingDown,TrendingUp,CalendarDays,Trash2,X,Check,ChevronRight, Sparkles, Landmark, ReceiptText, PiggyBank, Menu, RefreshCw} from 'lucide-react';
 
@@ -16,6 +17,7 @@ const iconMap={dashboard:LayoutDashboard,transactions:ArrowLeftRight,categories:
 const nav:{id:Tab,label:string}[]=[{id:'dashboard',label:'Visão geral'},{id:'transactions',label:'Transações'},{id:'categories',label:'Categorias'},{id:'accounts',label:'Contas'},{id:'cards',label:'Cartões'},{id:'installments',label:'Parcelamentos'},{id:'goals',label:'Metas'},{id:'planning',label:'Planejamento'},{id:'settings',label:'Dados e backup'}];
 const palette=['#ad9bec','#9fc0f8','#f0a6c3','#9dcbb5','#e5b894','#b2a8cc'];
 export default function Dashboard({initialData}:{initialData:Data}){
+ const confirm=useConfirm();
  const [data,setData]=useState<Data>(initialData),[tab,setTab]=useState<Tab>('dashboard'),[modal,setModal]=useState<Kind|null>(null),[selected,setSelected]=useState<RecordData|null>(null),[saving,setSaving]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[mobileNav,setMobileNav]=useState(false);
  const [form,setForm]=useState<RecordData>({});
  const update=(key:string,value:unknown)=>setForm(f=>({...f,[key]:value}));
@@ -26,7 +28,7 @@ export default function Dashboard({initialData}:{initialData:Data}){
   for(const key of ['amount_cents','initial_balance','limit_cents','total_cents','target_cents','saved_cents'])if(payload[key]!==undefined)payload[key]=cents(String(payload[key]));
   try{const res=await fetch('/api/'+entity[modal!],{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const j=await res.json();if(!res.ok)throw Error(j.error||'Não foi possível salvar.');await reload();setModal(null);setNotice('Registro salvo com sucesso!');setTimeout(()=>setNotice(''),3500);}catch(e){setError(e instanceof Error?e.message:'Erro inesperado.')}finally{setSaving(false)}
  };
- const remove=async(entity:string,id:number)=>{if(!confirm('Deseja excluir este registro?'))return;const res=await fetch(`/api/${entity}?id=${id}`,{method:'DELETE'});const j=await res.json();if(!res.ok){alert(j.error||'Não é possível excluir: existem registros vinculados.');return;}await reload();};
+ const remove=(entity:string,id:number)=>confirm({title:'Excluir registro?',description:'Este registro será excluído. Registros com vínculos financeiros protegidos não podem ser removidos.',confirmLabel:'Excluir registro',successMessage:'Registro excluído com sucesso.',onConfirm:async()=>{const res=await fetch(`/api/${entity}?id=${id}`,{method:'DELETE'});const j=await res.json();if(!res.ok)throw Error(j.error||'Não é possível excluir: existem registros vinculados.');await reload();}});
  const totals=useMemo(()=>{
   const monthly=planningSummary(data,today().slice(0,7));
   const pending=data.installments.filter(i=>!i.paid_on).reduce((s,i)=>s+Math.max(0,i.amount_cents-data.payments.filter(p=>p.installment_id===i.id).reduce((a,p)=>a+p.amount_cents,0)),0);
