@@ -45,6 +45,12 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    return run('INSERT INTO transactions(description,amount_cents,type,date,category_id,account_id,status,actual_cents,completed_on) VALUES(?,?,?,?,?,?,?,?,?)',
     text(payload.description),amount,type,targetDate,cat,id(payload.account_id),status,status==='completed'?amount:null,completedOn);
   }
+  case 'transaction-replan': {
+   const target=id(payload.id);
+   const tx=db.prepare('SELECT id,status FROM transactions WHERE id=?').get(target) as {id:number;status:string}|undefined;
+   if(!tx||tx.status!=='completed')throw Error('Só lançamentos realizados podem voltar para previstos.');
+   return run("UPDATE transactions SET status='planned',actual_cents=NULL,completed_on=NULL WHERE id=? AND status='completed'",target);
+  }
   case 'transaction-complete': {
    const target=id(payload.id),actual=positive(payload.actual_cents),completed=date(payload.completed_on);
    const tx=db.prepare('SELECT id,status FROM transactions WHERE id=?').get(target) as {id:number;status:string}|undefined;
