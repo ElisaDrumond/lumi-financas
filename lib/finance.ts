@@ -57,3 +57,27 @@ export function planningSummary(data:FinanceData,period:string,account:string|nu
  const balance=accountBalance(data,account),reserved=data.goals.reduce((s,g)=>s+g.saved_cents,0);
  return {income:sum('income')+pendingAvulsos('income'),expense:sum('expense')+pendingAvulsos('expense'),toReceive,toPay,toGoals,received:cash('income'),spent:cash('expense'),goalOut,balance,reserved,carryover,wealth:accountBalance(data)+reserved,projected:balance+toReceive-toPay-toGoals};
 }
+
+/** Planned expense by category for a selected competence month, without counting payments twice. */
+export function expenseByCategory(data:FinanceData & {categories?:Row[];purchases?:Row[]},period:string,account:string|number=''){
+ const totals=new Map<string,{name:string;color:string;amount_cents:number}>();
+ const category=(id:number|null|undefined)=>{
+  const cat=data.categories?.find(c=>Number(c.id)===Number(id));
+  return {name:cat?.name||'Sem categoria',color:cat?.color||'#d6cee5'};
+ };
+ const add=(id:number|null|undefined,amount:number)=>{
+  if(amount<=0)return;
+  const c=category(id),key=String(id??'none');
+  const current=totals.get(key);
+  if(current)current.amount_cents+=amount;
+  else totals.set(key,{...c,amount_cents:amount});
+ };
+ for(const o of data.occurrences)if(o.period===period&&o.type==='expense'&&!o.goal_id&&o.status!=='cancelled'&&sameAccount(o,account))add(o.category_id,o.amount_cents);
+ for(const t of data.transactions)if(t.date.startsWith(period)&&t.type==='expense'&&sameAccount(t,account))add(t.category_id,t.status==='planned'?t.amount_cents:(t.actual_cents??t.amount_cents));
+ for(const i of data.installments)if(i.due_on.startsWith(period)){
+  const purchase=data.purchases?.find(p=>p.id===i.purchase_id);
+  const owner=i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id;
+  if(account===''||owner!=null&&Number(owner)===Number(account))add(purchase?.category_id,i.amount_cents);
+ }
+ return [...totals.values()].sort((a,b)=>b.amount_cents-a.amount_cents||a.name.localeCompare(b.name,'pt-BR'));
+}
