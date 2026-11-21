@@ -246,3 +246,26 @@ test('gráfico de categorias agrega competência sem duplicar pagamento e exclui
  assert.ok(!expenseByCategory(readAll(month),shifted(5),a).some(c=>c.name==='Saúde teste'&&c.amount_cents===78820));
  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
+
+test('editar categoria mantém vínculos e alterar cores não mexe em valores',()=>{
+ const account=add('accounts',{name:'Conta para categoria',initial_balance:100000});
+ const id=add('categories',{name:'Saúde especial',type:'expense',color:'#a1b2c3'});
+ const transaction=add('transactions',{description:'Farmácia',type:'expense',date,amount_cents:7500,account_id:account,category_id:id,status:'completed'});
+ const before=accountBalance(readAll(),account);
+ updateDb('category-edit',{id,name:'Farmácia e higiene',color:'#EC818B'});
+ let current=readAll(),category=current.categories.find(c=>c.id===id);
+ assert.equal(category.name,'Farmácia e higiene');
+ assert.equal(category.color,'#EC818B');
+ assert.equal(category.type,'expense');
+ assert.equal(current.transactions.find(t=>t.id===transaction).category_id,id);
+ assert.equal(current.transactions.find(t=>t.id===transaction).category_name,'Farmácia e higiene');
+ assert.equal(accountBalance(current,account),before);
+ assert.throws(()=>updateDb('category-edit',{id,name:'Outro nome',color:'invalid'}));
+ assert.throws(()=>updateDb('category-edit',{id:999999,name:'Outro nome',color:'#ABCDEF'}));
+ updateDb('category-colors',{colors:[{id,color:'#769AF0'}]});
+ current=readAll();category=current.categories.find(c=>c.id===id);
+ assert.equal(category.color,'#769AF0');
+ assert.equal(accountBalance(current,account),before);
+ assert.throws(()=>updateDb('category-colors',{colors:[{id,color:'not-a-hex'}]}));
+ assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+});
