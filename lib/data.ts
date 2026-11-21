@@ -200,6 +200,21 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    if(exists)throw Error('Não é possível cancelar uma conta que já possui pagamento.');
    return run("UPDATE recurring_occurrences SET status='cancelled',customized=1 WHERE id=? AND status='pending'",oid);
   }
+  case 'installment-edit': {
+   const installmentId=id(payload.id);
+   const amount=positive(payload.amount_cents),due=date(payload.due_on);
+   db.exec('BEGIN IMMEDIATE');
+   try {
+    const current=db.prepare('SELECT id,purchase_id,paid_on FROM installments WHERE id=?').get(installmentId) as {id:number;purchase_id:number;paid_on:string|null}|undefined;
+    if(!current)throw Error('Parcela não encontrada.');
+    if(current.paid_on||db.prepare('SELECT 1 FROM payment_records WHERE installment_id=? LIMIT 1').get(installmentId))throw Error('Não é possível editar uma parcela com pagamentos registrados. O histórico financeiro está protegido.');
+    run('UPDATE installments SET amount_cents=?,due_on=? WHERE id=?',amount,due,installmentId);
+    const total=db.prepare('SELECT SUM(amount_cents) AS total FROM installments WHERE purchase_id=?').get(current.purchase_id) as {total:number};
+    if(!Number.isSafeInteger(total.total)||total.total<=0)throw Error('Total da compra inválido.');
+    run('UPDATE purchases SET total_cents=? WHERE id=?',total.total,current.purchase_id);
+    db.exec('COMMIT');return {lastInsertRowid:installmentId};
+   }catch(error){db.exec('ROLLBACK');throw error;}
+  }
   case 'record-payment': {
    const kind=name(payload.kind),target=id(payload.id),amount=positive(payload.amount_cents),account=id(payload.account_id),paid=date(payload.paid_on);
    const full=payload.settled===true||payload.settled==='true';
