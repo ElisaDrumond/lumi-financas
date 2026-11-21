@@ -293,3 +293,17 @@ test('editar parcela altera valor e vencimento e recalcula total sem tocar em pa
  assert.equal(accountBalance(state,a),48000);
  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
+
+test('ordenação por data, nome e valor não modifica os lançamentos',()=>{
+ const {sortRecords}=require('../.test-build/sort');
+ const rows=[{id:1,description:'Zebra',due_on:'2026-12-20',amount_cents:20000},
+ {id:2,description:'Alimentação',due_on:'2026-12-02',amount_cents:1000},
+ {id:3,description:'Casa',due_on:'2026-12-10',amount_cents:5000}];
+ const getters={date:r=>r.due_on,name:r=>r.description,amount:r=>r.amount_cents};
+ assert.deepEqual(sortRecords(rows,'date-asc',getters).map(r=>r.id),[2,3,1]);
+ assert.deepEqual(sortRecords(rows,'date-desc',getters).map(r=>r.id),[1,3,2]);
+ assert.deepEqual(sortRecords(rows,'name-asc',getters).map(r=>r.id),[2,3,1]);
+ assert.deepEqual(sortRecords(rows,'amount-desc',getters).map(r=>r.id),[1,3,2]);
+ assert.deepEqual(sortRecords(rows,'amount-asc',getters).map(r=>r.id),[2,3,1]);
+ assert.deepEqual(rows.map(r=>r.id),[1,2,3]);
+});
