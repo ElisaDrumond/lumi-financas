@@ -24,3 +24,29 @@
 
 /* Previous-period obligations remain in their original competence. */
 .carryover-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.carryover-heading .planning-subtitle{margin-bottom:2px}.carryover-heading .footnote{margin:0 0 12px}.carryover-list{display:grid;gap:10px;margin:0 0 25px}.carryover-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0;background:linear-gradient(120deg,#fff8f5d9,#fffafbcc);border:1px solid #f1dcdc;border-radius:16px;padding:16px 18px}.carryover-info{display:grid;gap:5px;min-width:0}.carryover-info strong{font-size:13px;overflow-wrap:anywhere}.carryover-info small{color:#948593;font-size:11px;line-height:1.55}.carryover-side{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-shrink:0}.carryover-side strong{font:700 16px 'Outfit',sans-serif;white-space:nowrap}.carryover-empty{font-size:12px;color:#9489a3;margin:8px 0 26px}@media(max-width:750px){.carryover-row{align-items:flex-start;flex-direction:column}.carryover-side{justify-content:flex-start;width:100%;flex-wrap:wrap}}
+
+/* Type filters and category tags */
+.finance-type-filter{display:inline-flex;align-items:center;gap:5px;padding:5px;border:1px solid rgba(173,155,236,.22);border-radius:14px;background:rgba(250,247,255,.72);flex-wrap:wrap}
+.finance-type-filter button{appearance:none;border:0;cursor:pointer;background:transparent;color:#857a9c;font:600 12px inherit;font-family:inherit;font-size:12px;font-weight:650;padding:9px 14px;border-radius:10px;transition:background .18s,color .18s}
+.finance-type-filter button.active{background:linear-gradient(115deg,#a48ded,#92a5e2);color:white;box-shadow:0 5px 12px rgba(144,127,212,.16)}
+.finance-type-filter button:focus-visible{outline:2px solid #8c75d3;outline-offset:2px}
+.finance-filter-spaced{margin:0 0 18px}
+.finance-category-label{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:5px 9px;border:1px solid rgba(175,160,204,.18);border-radius:999px;background:rgba(249,246,255,.8);color:#736783;font-size:11px;line-height:1.15;font-weight:600;white-space:normal;vertical-align:middle}
+.finance-category-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+.cell-sub+.finance-category-label,.purchase-item small+.finance-category-label{margin-top:7px}
+.expense-chart{margin:20px 0 32px;padding:24px 28px;border:1px solid rgba(255,255,255,.78);border-radius:25px;background:linear-gradient(135deg,rgba(255,255,255,.78),rgba(248,241,255,.63),rgba(234,250,255,.58))}
+.expense-chart-header{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:20px}
+.expense-chart-header h3{font-size:19px;font-weight:750;margin:0 0 5px;color:#39344e}
+.expense-chart-header p{margin:0;color:#a095af;font-size:12px}
+.expense-chart-total{color:#6e618f;font-size:16px;font-weight:750}
+.expense-chart-layout{display:grid;grid-template-columns:minmax(190px,260px) minmax(0,1fr);align-items:center;gap:30px}
+.expense-chart-circle{aspect-ratio:1;border-radius:50%;width:min(100%,250px);display:grid;place-items:center;margin:auto;box-shadow:0 12px 32px rgba(118,103,162,.1)}
+.expense-chart-hole{width:65%;height:65%;border-radius:50%;background:rgba(253,251,255,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;box-shadow:0 0 20px rgba(255,255,255,.45);padding:12px}
+.expense-chart-hole small{color:#988ca7;font-size:11px}.expense-chart-hole strong{color:#423b59;font-size:18px;overflow-wrap:anywhere}
+.expense-chart-legend{display:grid;gap:6px}
+.expense-chart-legend-row{display:grid;grid-template-columns:12px minmax(0,1fr) 56px minmax(75px,auto);align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(169,158,196,.13);font-size:12px}
+.expense-chart-dot{height:11px;width:11px;border-radius:4px}
+.expense-chart-category{color:#655a78;overflow-wrap:anywhere}.expense-chart-percent{color:#a294b2;text-align:right}.expense-chart-legend-row strong{text-align:right;color:#4b415e}
+.expense-chart-empty{padding:20px 0;text-align:center;color:#9a8ca8;font-size:13px}
+.expense-chart .footnote{margin:18px 0 0}
+@media(max-width:720px){.expense-chart{padding:20px 17px}.expense-chart-layout{grid-template-columns:1fr;gap:18px}.expense-chart-circle{width:205px}.expense-chart-legend-row{grid-template-columns:12px minmax(0,1fr) 50px minmax(75px,auto);gap:7px}.expense-chart-hole strong{font-size:15px}}
