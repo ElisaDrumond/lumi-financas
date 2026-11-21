@@ -108,3 +108,14 @@ try {
  `);
  db.exec('COMMIT');
 } catch(e) {db.exec('ROLLBACK');throw e;}
+
+// V1.0.2: optional pending status for one-off transactions. Legacy rows stay completed.
+db.exec('BEGIN IMMEDIATE');
+try {
+ const columns=db.prepare('PRAGMA table_info(transactions)').all() as {name:string}[];
+ if(!columns.some(c=>c.name==='status'))db.exec("ALTER TABLE transactions ADD COLUMN status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('planned','completed'))");
+ if(!columns.some(c=>c.name==='actual_cents'))db.exec('ALTER TABLE transactions ADD COLUMN actual_cents INTEGER CHECK(actual_cents > 0)');
+ if(!columns.some(c=>c.name==='completed_on'))db.exec('ALTER TABLE transactions ADD COLUMN completed_on TEXT');
+ db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_status_date ON transactions(status,date)');
+ db.exec('COMMIT');
+} catch(error){db.exec('ROLLBACK');throw error;}

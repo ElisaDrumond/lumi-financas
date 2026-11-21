@@ -34,7 +34,23 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
   case 'accounts': return run('INSERT INTO accounts(name,type,initial_balance,color) VALUES(?,?,?,?)',text(payload.name),name(payload.type)||'checking',integer(payload.initial_balance??0),name(payload.color)||'#9a8cf5');
   case 'categories': {const type=name(payload.type);if(!['income','expense'].includes(type)) throw Error('Tipo inválido.');return run('INSERT INTO categories(name,type,icon,color) VALUES(?,?,?,?)',text(payload.name),type,'tag',name(payload.color)||'#a48bf5');}
   case 'cards': {const closing=integer(payload.closing_day),due=integer(payload.due_day);if(closing<1||closing>28||due<1||due>28)throw Error('Use dias de 1 a 28.');return run('INSERT INTO cards(name,limit_cents,closing_day,due_day,color,account_id) VALUES(?,?,?,?,?,?)',text(payload.name),integer(payload.limit_cents??0),closing,due,name(payload.color)||'#a48bf5',id(payload.account_id,false));}
-  case 'transactions': {const type=name(payload.type);if(!['income','expense'].includes(type))throw Error('Tipo inválido.');const cat=id(payload.category_id,false);if(cat){const row=db.prepare('SELECT type FROM categories WHERE id=?').get(cat) as {type:string}|undefined;if(!row||row.type!==type)throw Error('Categoria incompatível.');}return run('INSERT INTO transactions(description,amount_cents,type,date,category_id,account_id) VALUES(?,?,?,?,?,?)',text(payload.description),positive(payload.amount_cents),type,date(payload.date),cat,id(payload.account_id));}
+  case 'transactions': {
+   const type=name(payload.type),status=name(payload.status)||'completed';
+   if(!['income','expense'].includes(type)||!['planned','completed'].includes(status))throw Error('Tipo ou situação inválida.');
+   const cat=id(payload.category_id,false);
+   if(cat){const row=db.prepare('SELECT type FROM categories WHERE id=?').get(cat) as {type:string}|undefined;if(!row||row.type!==type)throw Error('Categoria incompatível.');}
+   const targetDate=date(payload.date);
+   const completedOn=status==='completed'?date(payload.completed_on||targetDate):null;
+   const amount=positive(payload.amount_cents);
+   return run('INSERT INTO transactions(description,amount_cents,type,date,category_id,account_id,status,actual_cents,completed_on) VALUES(?,?,?,?,?,?,?,?,?)',
+    text(payload.description),amount,type,targetDate,cat,id(payload.account_id),status,status==='completed'?amount:null,completedOn);
+  }
+  case 'transaction-complete': {
+   const target=id(payload.id),actual=positive(payload.actual_cents),completed=date(payload.completed_on);
+   const tx=db.prepare('SELECT id,status FROM transactions WHERE id=?').get(target) as {id:number;status:string}|undefined;
+   if(!tx||tx.status!=='planned')throw Error('Este lançamento não está pendente de confirmação.');
+   return run("UPDATE transactions SET status='completed',actual_cents=?,completed_on=? WHERE id=? AND status='planned'",actual,completed,target);
+  }
   case 'goals': return run('INSERT INTO goals(name,target_cents,saved_cents,target_date,color) VALUES(?,?,?,?,?)',text(payload.name),positive(payload.target_cents),integer(payload.saved_cents??0),payload.target_date?date(payload.target_date):null,name(payload.color)||'#a48bf5');
   case 'purchases': {
    const method=name(payload.method);if(!['card','boleto'].includes(method))throw Error('Forma de pagamento inválida.');
