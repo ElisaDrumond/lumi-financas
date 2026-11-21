@@ -226,3 +226,23 @@ test('pendências anteriores acompanham meses sem duplicar a obrigação ou alte
  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
+
+test('gráfico de categorias agrega competência sem duplicar pagamento e exclui aportes',()=>{
+ const {expenseByCategory}=require('../.test-build/finance');
+ const a=add('accounts',{name:'Conta gráfico',initial_balance:100000});
+ const cat=add('categories',{name:'Saúde teste',type:'expense',color:'#9dcbb5'});
+ const other=add('categories',{name:'Transporte teste',type:'expense',color:'#f0a6c3'});
+ const month=shifted(4),due=month+'-10';
+ const recurring=add('recurrings',{...definition(a,{description:'Plano médico',start_on:month,amount_cents:58820,category_id:cat,due_day:10,end_on:month+'-28'})});
+ const planned=add('transactions',{description:'Consulta futura',amount_cents:20000,type:'expense',status:'planned',date:month+'-14',account_id:a,category_id:cat});
+ const purchased=add('purchases',{description:'Transporte parcelado',total_cents:5000,installments_count:1,method:'boleto',purchased_on:month+'-01',first_due_on:due,category_id:other});
+ const oc=readAll(month).occurrences.find(o=>o.recurring_id===recurring&&o.period===month);
+ const initial=expenseByCategory(readAll(month),month,a);
+ assert.equal(initial.find(c=>c.name==='Saúde teste').amount_cents,78820);
+ assert.equal(expenseByCategory(readAll(month),month).find(c=>c.name==='Transporte teste').amount_cents,5000);
+ add('record-payment',{kind:'occurrence',id:oc.id,amount_cents:20000,account_id:a,paid_on:due,settled:false});
+ add('transaction-payment',{id:planned,amount_cents:10000,account_id:a,paid_on:due,settled:false});
+ assert.equal(expenseByCategory(readAll(month),month,a).find(c=>c.name==='Saúde teste').amount_cents,78820);
+ assert.ok(!expenseByCategory(readAll(month),shifted(5),a).some(c=>c.name==='Saúde teste'&&c.amount_cents===78820));
+ assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+});
