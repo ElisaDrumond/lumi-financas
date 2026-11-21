@@ -33,7 +33,7 @@ export function carryoverItems(data:FinanceData,period:string,account:string|num
  }
  for(const i of data.installments){
   if(i.paid_on||i.due_on>=period+'-01')continue;
-  const owner=i.account_id??cardAccount(i.card_id);
+  const owner=i.account_id??cardAccount(i.card_id)??data.payments.find(p=>p.installment_id===i.id)?.account_id??null;
   if(!relevant(owner))continue;
   const paid=data.payments.filter(p=>p.installment_id===i.id).reduce((s,p)=>s+p.amount_cents,0);
   const remaining=Math.max(0,i.amount_cents-paid);
@@ -47,7 +47,7 @@ export function planningSummary(data:FinanceData,period:string,account:string|nu
  const cash=(type:string)=>data.transactions.filter(t=>(t.completed_on||t.date).startsWith(period)&&t.status!=='planned'&&t.type===type&&sameAccount(t,account)&&!(data.transactionPayments??[]).some(p=>p.transaction_id===t.id)).reduce((s,t)=>s+(t.actual_cents??t.amount_cents),0)
  + (data.transactionPayments??[]).filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)&&data.transactions.find(t=>t.id===p.transaction_id)?.type===type).reduce((s,p)=>s+p.amount_cents,0)+data.payments.filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)).reduce((s,p)=>{const o=data.occurrences.find(o=>o.id===p.occurrence_id);return s+((o?.type||'expense')===type?p.amount_cents:0)},0)+(type==='expense'?data.installments.filter(i=>i.paid_on?.startsWith(period)&&sameAccount(i,account)&&!data.payments.some(p=>p.installment_id===i.id)).reduce((s,i)=>s+i.amount_cents,0):0);
  const goalOut=data.goalMovements.filter(m=>m.moved_on.startsWith(period)&&sameAccount(m,account)).reduce((s,m)=>s+(m.direction==='deposit'?1:-1)*m.amount_cents,0);
- const pendingInstallments=data.installments.filter(i=>!i.paid_on&&i.due_on.startsWith(period)&&sameAccount({...i,account_id:i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id},account)).reduce((s,i)=>s+Math.max(0,i.amount_cents-data.payments.filter(p=>p.installment_id===i.id).reduce((v,p)=>v+p.amount_cents,0)),0);
+ const pendingInstallments=data.installments.filter(i=>!i.paid_on&&i.due_on.startsWith(period)&&sameAccount({...i,account_id:i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id},account)).reduce((s,i)=>s+Math.max(0,i.amount_cents-data.payments.filter(p=>p.installment_id===i.id).reduce((v,p)=>v+p.amount_cents,0)),0);
  const transactionDue=(t:Row)=>Math.max(0,t.amount_cents-(data.transactionPayments??[]).filter(p=>p.transaction_id===t.id).reduce((s,p)=>s+p.amount_cents,0));
  const pendingAvulsos=(type:string)=>data.transactions.filter(t=>t.status==='planned'&&t.type===type&&t.date.startsWith(period)&&sameAccount(t,account)).reduce((s,t)=>s+transactionDue(t),0);
  const carryover=carryoverItems(data,period,account);
