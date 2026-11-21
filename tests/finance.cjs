@@ -114,3 +114,33 @@ test('transações avulsas previstas não alteram saldo até confirmação e con
  assert.equal(readAll(next).transactions.find(x=>x.id===legacy).status,'completed');
  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
+
+test('editar definição recém-criada atualiza previsões, mas protege pagamentos e personalizações',()=>{
+ const a=add('accounts',{name:'Conta rascunho',initial_balance:90000});
+ const b=add('accounts',{name:'Conta corrigida',initial_balance:10000});
+ const r=add('recurrings',definition(a,{description:'Nome antigo',amount_cents:2500}));
+ const before=readAll(),initial=before.occurrences.filter(o=>o.recurring_id===r);
+ assert.ok(initial.length>0);
+ const edit={id:r,description:'Nome atualizado',type:'income',behavior:'variable',amount_cents:6400,
+  account_id:b,category_id:null,start_on:date,end_on:null,due_day:15};
+ updateDb('recurring-definition-edit',edit);
+ const after=readAll();
+ const rule=after.recurrings.find(x=>x.id===r);
+ assert.equal(rule.description,'Nome atualizado');assert.equal(rule.type,'income');
+ assert.equal(rule.account_id,b);assert.equal(rule.behavior,'variable');
+ const occurrences=after.occurrences.filter(o=>o.recurring_id===r);
+ assert.ok(occurrences.length>0);
+ assert.ok(occurrences.every(o=>o.amount_cents===6400&&o.account_id===b&&o.type==='income'));
+ assert.ok(occurrences.every(o=>o.due_on.endsWith('-15')));
+ assert.equal(accountBalance(after,a),90000);assert.equal(accountBalance(after,b),10000);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM recurring_occurrences WHERE recurring_id=?').get(r).n,occurrences.length);
+ const current=occurrences.find(o=>o.period===period);
+ updateDb('occurrence-edit',{id:current.id,amount_cents:6500,due_on:current.due_on});
+ assert.throws(()=>updateDb('recurring-definition-edit',{...edit,description:'Não deve salvar'}),/personalizados|personalizadas/i);
+ assert.equal(readAll().recurrings.find(x=>x.id===r).description,'Nome atualizado');
+ const paid=add('recurrings',definition(a,{description:'Com pagamento'}));
+ const due=readAll().occurrences.find(o=>o.recurring_id===paid&&o.period===period);
+ add('record-payment',{kind:'occurrence',id:due.id,account_id:a,amount_cents:10000,paid_on:date,settled:true});
+ assert.throws(()=>updateDb('recurring-definition-edit',{...edit,id:paid}),/movimentações/i);
+ assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+});
