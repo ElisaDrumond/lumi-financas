@@ -144,3 +144,36 @@ test('editar definição recém-criada atualiza previsões, mas protege pagament
  assert.throws(()=>updateDb('recurring-definition-edit',{...edit,id:paid}),/movimentações/i);
  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
+
+test('mês inicial é inclusivo mesmo quando o cadastro aconteceu após o dia de vencimento',()=>{
+ const account=add('accounts',{name:'Conta de teste do mês',initial_balance:100000});
+ const target=shifted(2),due=target+'-10';
+ const recurring=add('recurrings',{description:'DAS + DARF',type:'expense',behavior:'fixed',amount_cents:25000,
+  account_id:account,start_on:target,due_day:10});
+ let result=readAll(target);
+ let occurrence=result.occurrences.find(o=>o.recurring_id===recurring&&o.period===target);
+ assert.ok(occurrence,'O primeiro mês precisa gerar uma previsão');
+ assert.equal(occurrence.due_on,due);
+ assert.equal(accountBalance(result,account),100000);
+ assert.equal(planningSummary(result,target,account).toPay,25000);
+ // Existing definitions created before this correction used a full ISO date.
+ const legacy=add('recurrings',{description:'Legado',type:'expense',behavior:'fixed',amount_cents:1200,
+  account_id:account,start_on:target+'-21',due_day:10});
+ result=readAll(target);
+ assert.equal(result.recurrings.find(r=>r.id===legacy).start_on,target+'-01');
+ // Simulate legacy on-disk rows created with the old date semantics.
+ db.prepare('UPDATE recurrings SET start_on=? WHERE id=?').run(target+'-21',legacy);
+ db.prepare('DELETE FROM recurring_occurrences WHERE recurring_id=?').run(legacy);
+ result=readAll(target);
+ assert.equal(result.occurrences.find(o=>o.recurring_id===legacy&&o.period===target).due_on,due);
+ assert.equal(readAll(target).occurrences.filter(o=>o.recurring_id===legacy&&o.period===target).length,1);
+ // Correct a definition before payments; changing the month must rebuild projections.
+ const next=shifted(3);
+ updateDb('recurring-definition-edit',{id:recurring,description:'DAS + DARF',type:'expense',behavior:'fixed',
+  amount_cents:25000,account_id:account,start_on:next,end_on:null,due_day:10});
+ result=readAll(next);
+ assert.equal(result.recurrings.find(r=>r.id===recurring).start_on,next+'-01');
+ assert.ok(!result.occurrences.some(o=>o.recurring_id===recurring&&o.period===target));
+ assert.equal(result.occurrences.find(o=>o.recurring_id===recurring&&o.period===next).due_on,next+'-10');
+ assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+});

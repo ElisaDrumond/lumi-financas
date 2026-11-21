@@ -28,6 +28,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
  const integer = (v:unknown) => {const n=Number(v);if(!Number.isSafeInteger(n))throw Error('Número inválido.');return n;};
  const id = (v:unknown,required=true) => {if(v===null||v===undefined||v===''){if(required)throw Error('Selecione o item obrigatório.');return null;}return positive(v);};
  const date = (v:unknown) => {const s=name(v);if(!/^\d{4}-\d{2}-\d{2}$/.test(s)||Number.isNaN(Date.parse(s+'T12:00:00Z'))||new Date(s+'T12:00:00Z').toISOString().slice(0,10)!==s) throw Error('Data inválida.');return s;};
+ const recurringStart=(v:unknown)=>{const value=name(v);const month=/^\d{4}-(0[1-9]|1[0-2])$/.test(value)?value:value.match(/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/)?.[0].slice(0,7);if(!month)throw Error('Selecione um mês de início válido.');return date(month+'-01');};
  const text = (v:unknown) => {const s=name(v);if(!s||s.length>120)throw Error('Preencha o nome ou descrição (até 120 caracteres).');return s;};
  const run=(sql:string,...args:(string|number|null)[])=>db.prepare(sql).run(...args);
  switch(entity){
@@ -82,7 +83,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
   case 'recurrings': {
    const type=name(payload.type),behavior=name(payload.behavior);
    if(!['income','expense'].includes(type)||!['fixed','variable'].includes(behavior))throw Error('Tipo ou comportamento inválido.');
-   const start=date(payload.start_on),end=payload.end_on?date(payload.end_on):null;
+   const start=recurringStart(payload.start_on),end=payload.end_on?date(payload.end_on):null;
    if(end&&end<start)throw Error('A data final deve ser posterior à inicial.');
    const day=integer(payload.due_day);if(day<1||day>31)throw Error('Dia de vencimento inválido.');
    const cat=id(payload.category_id,false);
@@ -101,7 +102,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const type=name(payload.type),behavior=name(payload.behavior);
    if(!['income','expense'].includes(type)||!['fixed','variable'].includes(behavior))throw Error('Tipo ou comportamento inválido.');
    if(current.goal_id&&type!=='expense')throw Error('Aportes de metas precisam ser despesas.');
-   const start=date(payload.start_on),end=payload.end_on?date(payload.end_on):null;
+   const start=recurringStart(payload.start_on),end=payload.end_on?date(payload.end_on):null;
    if(end&&end<start)throw Error('A data final deve ser posterior à inicial.');
    const day=integer(payload.due_day);
    if(day<1||day>31)throw Error('Dia de vencimento inválido.');
