@@ -21,3 +21,6 @@
 
 /* Empty card state is centered across the entire cards grid. */
 .cards-empty-state{grid-column:1/-1;display:flex;align-items:center;justify-content:center;min-height:270px;width:100%;text-align:center}.cards-empty-state .empty{width:100%}
+
+/* Previous-period obligations remain in their original competence. */
+.carryover-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.carryover-heading .planning-subtitle{margin-bottom:2px}.carryover-heading .footnote{margin:0 0 12px}.carryover-list{display:grid;gap:10px;margin:0 0 25px}.carryover-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0;background:linear-gradient(120deg,#fff8f5d9,#fffafbcc);border:1px solid #f1dcdc;border-radius:16px;padding:16px 18px}.carryover-info{display:grid;gap:5px;min-width:0}.carryover-info strong{font-size:13px;overflow-wrap:anywhere}.carryover-info small{color:#948593;font-size:11px;line-height:1.55}.carryover-side{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-shrink:0}.carryover-side strong{font:700 16px 'Outfit',sans-serif;white-space:nowrap}.carryover-empty{font-size:12px;color:#9489a3;margin:8px 0 26px}@media(max-width:750px){.carryover-row{align-items:flex-start;flex-direction:column}.carryover-side{justify-content:flex-start;width:100%;flex-wrap:wrap}}
