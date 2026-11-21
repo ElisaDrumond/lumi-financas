@@ -80,3 +80,37 @@ test('migração preserva reserva antiga sem debitar contas retroativamente',()=
  assert.equal(execFileSync(process.execPath,['-e',script],{cwd:process.cwd(),env:{...process.env,LUMI_DB_PATH:old},encoding:'utf8'}).trim(),'ok');
  const persisted=execFileSync(process.execPath,['-e',"const d=require('./.test-build/data').readAll();console.log(d.goals[0].saved_cents+':'+d.goalMovements.length)"],{cwd:process.cwd(),env:{...process.env,LUMI_DB_PATH:old},encoding:'utf8'});assert.equal(persisted.trim(),'25000:0');
 });
+
+test('transações avulsas previstas não alteram saldo até confirmação e continuam distintas das recorrências',()=>{
+ const account=add('accounts',{name:'Teste avulsos',initial_balance:50000});
+ const next=shifted(1),due=next+'-20',done=next+'-21';
+ const predicted=add('transactions',{description:'13º salário — primeira parcela',type:'income',amount_cents:70765,date:due,account_id:account,status:'planned'});
+ let state=readAll(next);
+ assert.equal(accountBalance(state,account),50000);
+ assert.equal(planningSummary(state,next,account).toReceive,70765);
+ assert.equal(planningSummary(state,next,account).projected,120765);
+ assert.equal(state.transactions.find(x=>x.id===predicted).status,'planned');
+ assert.equal(planningSummary(state,next,account).received,0);
+ add('transaction-complete',{id:predicted,actual_cents:71000,completed_on:done});
+ state=readAll(next);
+ assert.equal(accountBalance(state,account),121000);
+ assert.equal(planningSummary(state,next,account).received,71000);
+ assert.equal(planningSummary(state,next,account).toReceive,0);
+ assert.throws(()=>updateDb('transaction-complete',{id:predicted,actual_cents:71000,completed_on:done}));
+ assert.equal(accountBalance(readAll(next),account),121000);
+ add('transaction-replan',{id:predicted});
+ state=readAll(next);
+ assert.equal(accountBalance(state,account),50000);
+ assert.equal(planningSummary(state,next,account).toReceive,70765);
+ assert.throws(()=>updateDb('transaction-replan',{id:predicted}));
+ const expense=add('transactions',{description:'Compra avulsa prevista',type:'expense',amount_cents:2500,date:due,account_id:account,status:'planned'});
+ assert.equal(accountBalance(readAll(next),account),50000);
+ assert.equal(planningSummary(readAll(next),next,account).toPay,2500);
+ add('transaction-complete',{id:expense,actual_cents:2800,completed_on:done});
+ assert.equal(accountBalance(readAll(next),account),47200);
+ assert.equal(planningSummary(readAll(next),next,account).spent,2800);
+ const legacy=add('transactions',{description:'Lançamento realizado',type:'income',amount_cents:300,date:done,account_id:account});
+ assert.equal(accountBalance(readAll(next),account),47500);
+ assert.equal(readAll(next).transactions.find(x=>x.id===legacy).status,'completed');
+ assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+});
