@@ -90,6 +90,34 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const goal=id(payload.goal_id,false);if(goal&&(type!=='expense'||cat))throw Error('Aportes devem ser saídas sem categoria de consumo.');
    return run('INSERT INTO recurrings(description,type,behavior,amount_cents,account_id,category_id,start_on,end_on,due_day,goal_id) VALUES(?,?,?,?,?,?,?,?,?,?)',text(payload.description),type,behavior,positive(payload.amount_cents),id(payload.account_id),cat,start,end,day,goal);
   }
+  case 'recurring-definition-edit': {
+   const rid=id(payload.id);
+   const current=db.prepare('SELECT id,goal_id,status FROM recurrings WHERE id=?').get(rid) as {id:number;goal_id:number|null;status:string}|undefined;
+   if(!current)throw Error('Recorrência não encontrada.');
+   if(current.status==='ended')throw Error('Recorrências encerradas não podem ser reconfiguradas.');
+   const moved=db.prepare(`SELECT 1 FROM recurring_occurrences o LEFT JOIN payment_records p ON p.occurrence_id=o.id LEFT JOIN goal_movements m ON m.occurrence_id=o.id WHERE o.recurring_id=? AND (p.id IS NOT NULL OR m.id IS NOT NULL OR o.status IN ('paid','partial') OR o.customized=1 OR o.status='cancelled') LIMIT 1`).get(rid);
+   if(moved)throw Error('Esta recorrência já possui movimentações ou meses personalizados. Preserve o histórico e edite as ocorrências futuras.');
+   if(db.prepare('SELECT 1 FROM recurring_rules WHERE recurring_id=? LIMIT 1').get(rid))throw Error('Esta recorrência possui regras mensais personalizadas. Altere apenas os próximos meses para preservar seu planejamento.');
+   const type=name(payload.type),behavior=name(payload.behavior);
+   if(!['income','expense'].includes(type)||!['fixed','variable'].includes(behavior))throw Error('Tipo ou comportamento inválido.');
+   if(current.goal_id&&type!=='expense')throw Error('Aportes de metas precisam ser despesas.');
+   const start=date(payload.start_on),end=payload.end_on?date(payload.end_on):null;
+   if(end&&end<start)throw Error('A data final deve ser posterior à inicial.');
+   const day=integer(payload.due_day);
+   if(day<1||day>31)throw Error('Dia de vencimento inválido.');
+   const category=id(payload.category_id,false);
+   if(category){const row=db.prepare('SELECT type FROM categories WHERE id=?').get(category) as {type:string}|undefined;if(row?.type!==type||current.goal_id)throw Error('Categoria incompatível.');}
+   const amount=positive(payload.amount_cents),account=id(payload.account_id),description=text(payload.description);
+   db.exec('BEGIN IMMEDIATE');
+   try {
+    // Every generated occurrence is still an untouched forecast. Rebuild it from the revised rule.
+    run('DELETE FROM recurring_occurrences WHERE recurring_id=?',rid);
+    run('UPDATE recurrings SET description=?,type=?,behavior=?,amount_cents=?,account_id=?,category_id=?,start_on=?,end_on=?,due_day=? WHERE id=?',
+     description,type,behavior,amount,account,category,start,end,day,rid);
+    db.exec('COMMIT');
+   }catch(e){db.exec('ROLLBACK');throw e;}
+   return {lastInsertRowid:rid};
+  }
   case 'recurring-status': {
    const status=name(payload.status);if(!['active','paused','ended'].includes(status))throw Error('Status inválido.');
    return run('UPDATE recurrings SET status=? WHERE id=?',status,id(payload.id));
