@@ -1,0 +1,82 @@
+﻿const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const {execFileSync}=require('node:child_process');
+const directory=fs.mkdtempSync(path.join(os.tmpdir(),'lumi-v2-'));
+process.env.LUMI_DB_PATH=path.join(directory,'test.db');
+const {readAll,updateDb}=require('../.test-build/data');
+const db=require('../.test-build/db').default;
+const {accountBalance,planningSummary,sameAccount}=require('../.test-build/finance');
+const period=new Date().toLocaleDateString('en-CA').slice(0,7),date=period+'-01';
+const shifted=(offset)=>{const [y,m]=period.split('-').map(Number);return new Date(Date.UTC(y,m-1+offset,1)).toISOString().slice(0,7)};
+const add=(entity,p)=>Number(updateDb(entity,p).lastInsertRowid);
+const key=()=>require('node:crypto').randomUUID();
+const definition=(account,extra={})=>({description:'Conta mensal',type:'expense',behavior:'fixed',amount_cents:10000,account_id:account,start_on:date,due_day:10,...extra});
+test('duas contas, metas, patrimônio, idempotência e recorrências mensais',async t=>{
+ const nubank=add('accounts',{name:'Nubank',initial_balance:200000}),picpay=add('accounts',{name:'PicPay',initial_balance:100000});
+ let rid1,rid2,goal,deposit,withdraw,schedule,oc;
+ const totalWealth=()=>{const d=readAll();return accountBalance(d)+d.goals.reduce((s,g)=>s+g.saved_cents,0)};
+ await t.test('duas recorrências consolidadas e filtro por conta com ID numérico/string',()=>{
+  rid1=add('recurrings',definition(nubank));rid2=add('recurrings',definition(picpay,{amount_cents:20000}));
+  const d=readAll(),rows=d.occurrences.filter(o=>o.period===period);
+  assert.equal(rows.length,2);assert.equal(rows.find(o=>o.recurring_id===rid2).account_id,picpay);
+  assert.equal(rows.filter(o=>sameAccount(o,String(picpay))).length,1);
+  assert.equal(planningSummary(d,period).expense,30000);assert.equal(planningSummary(d,period,String(picpay)).expense,20000);assert.equal(planningSummary(d,period,nubank).expense,10000);
+  assert.equal(accountBalance(d),300000);assert.equal(accountBalance(d,String(picpay)),100000);
+  assert.throws(()=>updateDb('recurrings',definition('',{})));
+ });
+ await t.test('aporte único debita origem, atualiza meta e preserva patrimônio',()=>{
+  goal=add('goals',{name:'Reserva',target_cents:2000000});
+  const p={id:goal,account_id:nubank,amount_cents:30000,moved_on:date,request_key:key()};
+  deposit=add('goal-contribution',p);assert.equal(add('goal-contribution',p),deposit);
+  const d=readAll();assert.equal(accountBalance(d,nubank),170000);assert.equal(d.goals[0].saved_cents,30000);assert.equal(totalWealth(),300000);
+  assert.equal(planningSummary(d,period).spent,0);assert.equal(planningSummary(d,period).goalOut,30000);
+  assert.throws(()=>updateDb('goal-contribution',{...p,amount_cents:100}));assert.equal(d.goalMovements.length,1);
+ });
+ await t.test('retirada para outra conta sem receita fictícia e estornos seguros',()=>{
+  withdraw=add('goal-withdraw',{id:goal,account_id:picpay,amount_cents:10000,moved_on:date,request_key:key()});
+  assert.equal(accountBalance(readAll(),picpay),110000);assert.equal(totalWealth(),300000);assert.equal(planningSummary(readAll(),period).received,0);
+  assert.throws(()=>updateDb('goal-reverse',{id:goal,account_id:nubank,amount_cents:30000,movement_id:deposit,moved_on:date,request_key:key()}));
+  add('goal-reverse',{id:goal,account_id:picpay,amount_cents:10000,movement_id:withdraw,moved_on:date,request_key:key()});
+  const p={id:goal,account_id:nubank,amount_cents:30000,movement_id:deposit,moved_on:date,request_key:key()};
+  const reversed=add('goal-reverse',p);assert.equal(add('goal-reverse',p),reversed);
+  assert.throws(()=>add('goal-reverse',{...p,request_key:key()}));
+  assert.equal(accountBalance(readAll(),nubank),200000);assert.equal(accountBalance(readAll(),picpay),100000);assert.equal(totalWealth(),300000);
+ });
+ await t.test('previsão mensal não debita, edição isolada e confirmação idempotente',()=>{
+  schedule=add('recurrings',definition(picpay,{description:'Aporte mensal',goal_id:goal,amount_cents:30000}));
+  let d=readAll();oc=d.occurrences.find(o=>o.recurring_id===schedule&&o.period===period);
+  assert.equal(planningSummary(d,period).toGoals,30000);assert.equal(accountBalance(d,picpay),100000);
+  updateDb('occurrence-edit',{id:oc.id,amount_cents:35000,due_on:oc.due_on});
+  d=readAll();assert.equal(d.occurrences.find(o=>o.recurring_id===schedule&&o.period===shifted(1)).amount_cents,30000);
+  const p={id:goal,account_id:picpay,occurrence_id:oc.id,amount_cents:35000,moved_on:date,request_key:key()};
+  add('goal-contribution',p);add('goal-contribution',p);
+  assert.throws(()=>add('goal-contribution',{...p,request_key:key()}));
+  assert.throws(()=>add('record-payment',{kind:'occurrence',id:oc.id,account_id:picpay,amount_cents:35000,paid_on:date,settled:true}));
+  assert.equal(accountBalance(readAll(),picpay),65000);assert.equal(totalWealth(),300000);assert.equal(planningSummary(readAll(),period).spent,0);
+  assert.equal(planningSummary(readAll(),period).toGoals,0);
+ });
+ await t.test('pular mês e modificar meses futuros preserva realizado e mês anterior',()=>{
+  const next=readAll().occurrences.find(o=>o.recurring_id===schedule&&o.period===shifted(1));updateDb('occurrence-cancel',{id:next.id});
+  updateDb('recurring-edit',{id:schedule,scope:'future',period:shifted(2),amount_cents:40000,due_day:31});
+  const d=readAll();assert.equal(d.occurrences.find(o=>o.id===oc.id).amount_cents,35000);assert.equal(d.occurrences.find(o=>o.id===next.id).status,'cancelled');assert.equal(d.occurrences.find(o=>o.recurring_id===schedule&&o.period===shifted(2)).amount_cents,40000);
+  const {ensureOccurrences}=require('../.test-build/recurrings');ensureOccurrences([shifted(20)]);assert.equal(readAll().occurrences.find(o=>o.recurring_id===schedule&&o.period===shifted(20)).amount_cents,40000);
+  for(let n=0;n<3;n++)readAll();assert.equal(db.prepare('SELECT COUNT(*) n FROM recurring_occurrences WHERE recurring_id=? AND period=?').get(schedule,period).n,1);
+ });
+ await t.test('pagamentos de consumo aplicam sinal correto em cada conta',()=>{
+  const d=readAll();const expense=d.occurrences.find(o=>o.recurring_id===rid1&&o.period===period);
+  add('record-payment',{kind:'occurrence',id:expense.id,amount_cents:9000,account_id:nubank,paid_on:date,settled:true});
+  assert.equal(accountBalance(readAll(),nubank),191000);assert.equal(planningSummary(readAll(),period).spent,9000);assert.equal(planningSummary(readAll(),period).toPay,20000);
+  assert.throws(()=>add('goal-contribution',{id:goal,account_id:99999,amount_cents:100,moved_on:date,request_key:key()}));
+  assert.equal(readAll().goals[0].saved_cents,35000);
+  const confirmed=readAll().goalMovements.find(m=>m.occurrence_id===oc.id);
+  add('goal-reverse',{id:goal,account_id:picpay,amount_cents:35000,movement_id:confirmed.id,moved_on:date,request_key:key()});
+  assert.equal(readAll().occurrences.find(o=>o.id===oc.id).status,'cancelled');assert.equal(readAll().goals[0].saved_cents,0);assert.equal(accountBalance(readAll(),picpay),100000);
+  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+ });
+});
+test('migração preserva reserva antiga sem debitar contas retroativamente',()=>{
+ const old=path.join(directory,'legacy.db');
+ const script=`const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync(process.env.LUMI_DB_PATH);d.exec("CREATE TABLE goals(id INTEGER PRIMARY KEY,name TEXT,target_cents INTEGER,saved_cents INTEGER,target_date TEXT,color TEXT);INSERT INTO goals VALUES(1,'Antiga',100000,25000,NULL,'#fff')");d.close();const {readAll,updateDb}=require('./.test-build/data');updateDb('accounts',{name:'Original',initial_balance:200000});const x=readAll();const a=require('node:assert/strict');a.equal(x.goals[0].saved_cents,25000);a.equal(x.accounts[0].initial_balance,200000);a.equal(x.goalMovements.length,0);console.log('ok');`;
+ assert.equal(execFileSync(process.execPath,['-e',script],{cwd:process.cwd(),env:{...process.env,LUMI_DB_PATH:old},encoding:'utf8'}).trim(),'ok');
+ const persisted=execFileSync(process.execPath,['-e',"const d=require('./.test-build/data').readAll();console.log(d.goals[0].saved_cents+':'+d.goalMovements.length)"],{cwd:process.cwd(),env:{...process.env,LUMI_DB_PATH:old},encoding:'utf8'});assert.equal(persisted.trim(),'25000:0');
+});

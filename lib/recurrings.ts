@@ -14,9 +14,10 @@ export function ensureOccurrences(periods:string[]) {
  try {
   for(const r of definitions)for(const period of periods) {
    if(period<r.start_on.slice(0,7) || (r.end_on && period>r.end_on.slice(0,7)))continue;
-   const due=dateForPeriod(period,r.due_day);
+   const version=db.prepare('SELECT amount_cents,due_day FROM recurring_rules WHERE recurring_id=? AND period<=? ORDER BY period DESC LIMIT 1').get(r.id,period) as {amount_cents:number;due_day:number}|undefined;
+   const due=dateForPeriod(period,version?.due_day??r.due_day);
    if(due<r.start_on || (r.end_on && due>r.end_on))continue;
-   add.run(r.id,period,due,r.amount_cents,r.category_id);
+   add.run(r.id,period,due,version?.amount_cents??r.amount_cents,r.category_id);
   }
   db.exec('COMMIT');
  }catch(error){db.exec('ROLLBACK');throw error;}

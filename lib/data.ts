@@ -1,8 +1,10 @@
+import {goalMovement} from './goals';
 import db from './db';
 import {ensureOccurrences, monthsAroundNow,dateForPeriod} from './recurrings';
 export type Entity = 'accounts' | 'categories' | 'cards' | 'transactions' | 'purchases' | 'installments' | 'goals';
-export function readAll() {
- ensureOccurrences(monthsAroundNow());
+export function readAll(period?:string) {
+ if(period&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))throw Error('Mes invalido.');
+ ensureOccurrences([...monthsAroundNow(),...(period?[period]:[])]);
  const query = (sql:string) => db.prepare(sql).all().map(row => ({...row}));
  return {
   accounts: query('SELECT * FROM accounts ORDER BY id DESC'),
@@ -11,14 +13,16 @@ export function readAll() {
   transactions: query('SELECT t.*,c.name AS category_name,c.color AS category_color,a.name AS account_name FROM transactions t LEFT JOIN categories c ON c.id=t.category_id JOIN accounts a ON a.id=t.account_id ORDER BY date DESC,t.id DESC'),
   purchases: query('SELECT p.*,c.name AS card_name,cat.name AS category_name FROM purchases p LEFT JOIN cards c ON p.card_id=c.id LEFT JOIN categories cat ON p.category_id=cat.id ORDER BY p.id DESC'),
   installments: query('SELECT i.*,p.description,p.method,p.card_id,c.name AS card_name FROM installments i JOIN purchases p ON p.id=i.purchase_id LEFT JOIN cards c ON p.card_id=c.id ORDER BY i.due_on ASC'),
+  goalMovements: query('SELECT m.*,g.name AS goal_name,a.name AS account_name FROM goal_movements m JOIN goals g ON g.id=m.goal_id JOIN accounts a ON a.id=m.account_id ORDER BY moved_on DESC,m.id DESC'),
   goals: query('SELECT * FROM goals ORDER BY id DESC'),
   recurrings: query('SELECT r.*,a.name AS account_name,c.name AS category_name FROM recurrings r JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=r.category_id ORDER BY r.id DESC'),
-  occurrences: query(`SELECT o.*,r.description,r.type,r.behavior,r.account_id,r.amount_cents AS base_amount_cents,a.name AS account_name,c.name AS category_name,COALESCE((SELECT SUM(p.amount_cents) FROM payment_records p WHERE p.occurrence_id=o.id),0) AS paid_cents FROM recurring_occurrences o JOIN recurrings r ON r.id=o.recurring_id JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=o.category_id ORDER BY o.due_on ASC`),
+  occurrences: query(`SELECT o.*,r.description,r.type,r.behavior,r.goal_id,r.account_id,r.amount_cents AS base_amount_cents,a.name AS account_name,c.name AS category_name,COALESCE((SELECT SUM(p.amount_cents) FROM payment_records p WHERE p.occurrence_id=o.id),0) AS paid_cents FROM recurring_occurrences o JOIN recurrings r ON r.id=o.recurring_id JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=o.category_id ORDER BY o.due_on ASC`),
   payments: query('SELECT * FROM payment_records ORDER BY paid_on DESC'),
   adjustments: query('SELECT * FROM balance_adjustments ORDER BY adjusted_on DESC'),
  };
 }
 export function updateDb(entity: string, payload: Record<string,unknown>) {
+ if(['goal-contribution','goal-withdraw','goal-reverse'].includes(entity))return goalMovement(entity,payload);
  const name = (v:unknown) => String(v ?? '').trim();
  const positive = (v:unknown) => {const n = Number(v); if(!Number.isSafeInteger(n)||n<=0) throw Error('Informe um valor válido em centavos.');return n;};
  const integer = (v:unknown) => {const n=Number(v);if(!Number.isSafeInteger(n))throw Error('Número inválido.');return n;};
@@ -61,7 +65,8 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const day=integer(payload.due_day);if(day<1||day>31)throw Error('Dia de vencimento inválido.');
    const cat=id(payload.category_id,false);
    if(cat){const row=db.prepare('SELECT type FROM categories WHERE id=?').get(cat) as {type:string}|undefined;if(row?.type!==type)throw Error('Categoria incompatível.');}
-   return run('INSERT INTO recurrings(description,type,behavior,amount_cents,account_id,category_id,start_on,end_on,due_day) VALUES(?,?,?,?,?,?,?,?,?)',text(payload.description),type,behavior,positive(payload.amount_cents),id(payload.account_id),cat,start,end,day);
+   const goal=id(payload.goal_id,false);if(goal&&(type!=='expense'||cat))throw Error('Aportes devem ser saídas sem categoria de consumo.');
+   return run('INSERT INTO recurrings(description,type,behavior,amount_cents,account_id,category_id,start_on,end_on,due_day,goal_id) VALUES(?,?,?,?,?,?,?,?,?,?)',text(payload.description),type,behavior,positive(payload.amount_cents),id(payload.account_id),cat,start,end,day,goal);
   }
   case 'recurring-status': {
    const status=name(payload.status);if(!['active','paused','ended'].includes(status))throw Error('Status inválido.');
@@ -70,7 +75,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
   case 'recurring-edit': {
    const rid=id(payload.id),scope=name(payload.scope);
    if(!['future','all'].includes(scope))throw Error('Escopo inválido.');
-   const row=db.prepare('SELECT * FROM recurrings WHERE id=?').get(rid) as {amount_cents:number;due_day:number}|undefined;
+   const row=db.prepare('SELECT * FROM recurrings WHERE id=?').get(rid) as {amount_cents:number;due_day:number;start_on:string}|undefined;
    if(!row)throw Error('Recorrência inexistente.');
    const amount=positive(payload.amount_cents),day=integer(payload.due_day);
    if(day<1||day>31)throw Error('Dia inválido.');
@@ -78,10 +83,13 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    if(scope==='future'&&!/^\d{4}-\d{2}$/.test(period))throw Error('Mês inválido.');
    db.exec('BEGIN IMMEDIATE');
    try{
+    run('INSERT OR IGNORE INTO recurring_rules(recurring_id,period,amount_cents,due_day) VALUES(?,?,?,?)',rid,row.start_on.slice(0,7),row.amount_cents,row.due_day);
+    run('INSERT INTO recurring_rules(recurring_id,period,amount_cents,due_day) VALUES(?,?,?,?) ON CONFLICT(recurring_id,period) DO UPDATE SET amount_cents=excluded.amount_cents,due_day=excluded.due_day',rid,scope==='future'?period:row.start_on.slice(0,7),amount,day);
+    if(scope==='all')run('DELETE FROM recurring_rules WHERE recurring_id=? AND period>?',rid,row.start_on.slice(0,7));
     run('UPDATE recurrings SET amount_cents=?,due_day=? WHERE id=?',amount,day,rid);
     // Historical paid or customized occurrences are immutable; only untouched pending projections update.
     const rows=db.prepare(`SELECT id,period FROM recurring_occurrences WHERE recurring_id=? AND customized=0 AND status='pending' AND NOT EXISTS(SELECT 1 FROM payment_records p WHERE p.occurrence_id=recurring_occurrences.id) ${scope==='future'?'AND period>=?':''}`).all(...(scope==='future'?[rid,period]:[rid])) as {id:number;period:string}[];
-    for(const r of rows)run('UPDATE recurring_occurrences SET amount_cents=?,due_on=? WHERE id=?',amount,dateForPeriod(r.period,day),r.id);
+    for(const r of rows){const v=db.prepare('SELECT amount_cents,due_day FROM recurring_rules WHERE recurring_id=? AND period<=? ORDER BY period DESC LIMIT 1').get(rid,r.period) as {amount_cents:number;due_day:number};run('UPDATE recurring_occurrences SET amount_cents=?,due_on=? WHERE id=?',v.amount_cents,dateForPeriod(r.period,v.due_day),r.id);}
     db.exec('COMMIT');
    }catch(e){db.exec('ROLLBACK');throw e;}
    return {lastInsertRowid:rid};
@@ -104,6 +112,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const kind=name(payload.kind),target=id(payload.id),amount=positive(payload.amount_cents),account=id(payload.account_id),paid=date(payload.paid_on);
    const full=payload.settled===true||payload.settled==='true';
    if(!['occurrence','installment'].includes(kind))throw Error('Tipo de pagamento inválido.');
+   if(kind==='occurrence'&&db.prepare('SELECT r.goal_id FROM recurrings r JOIN recurring_occurrences o ON o.recurring_id=r.id WHERE o.id=?').get(target)?.goal_id)throw Error('Confirme este aporte pela operação de metas.');
    const table=kind==='occurrence'?'recurring_occurrences':'installments';
    const column=kind==='occurrence'?'occurrence_id':'installment_id';
    const record=db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(target) as {amount_cents:number;status?:string;paid_on?:string}|undefined;
@@ -129,10 +138,6 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const record=db.prepare('SELECT paid_on FROM installments WHERE id=?').get(installment) as {paid_on:string|null}|undefined;
    if(!record)throw Error('Parcela não encontrada.');if(record.paid_on)throw Error('Parcela já paga.');
    return run('UPDATE installments SET paid_on=?,account_id=? WHERE id=? AND paid_on IS NULL',date(payload.paid_on),account,installment);
-  }
-  case 'goal-contribution': {
-    const goal=id(payload.id),amount=positive(payload.amount_cents);
-    return run('UPDATE goals SET saved_cents=saved_cents+? WHERE id=?',amount,goal);
   }
   default: throw Error('Operação não suportada.');
  }

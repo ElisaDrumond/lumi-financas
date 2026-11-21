@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const filepath = path.join(process.cwd(), 'data', 'financas.db');
+const filepath = process.env.LUMI_DB_PATH || path.join(process.cwd(), 'data', 'financas.db');
 fs.mkdirSync(path.dirname(filepath), { recursive: true });
 const db = new DatabaseSync(filepath);
 db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
@@ -85,3 +85,26 @@ CREATE INDEX IF NOT EXISTS idx_occurrences_period ON recurring_occurrences(perio
 CREATE INDEX IF NOT EXISTS idx_payments_oc ON payment_records(occurrence_id);
 CREATE INDEX IF NOT EXISTS idx_payments_inst ON payment_records(installment_id);
 `);
+
+// V2: additive migration. Legacy saved_cents remains an unlinked reserve.
+db.exec('BEGIN IMMEDIATE');
+try {
+ if(!db.prepare('PRAGMA table_info(recurrings)').all().some(c=>c.name==='goal_id'))db.exec('ALTER TABLE recurrings ADD COLUMN goal_id INTEGER REFERENCES goals(id) ON DELETE RESTRICT');
+ db.exec(`
+ CREATE TABLE IF NOT EXISTS goal_movements (
+ id INTEGER PRIMARY KEY, goal_id INTEGER NOT NULL REFERENCES goals(id) ON DELETE RESTRICT,
+ account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents>0), direction TEXT NOT NULL CHECK(direction IN ('deposit','withdraw')),
+ moved_on TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', request_key TEXT NOT NULL UNIQUE,
+ occurrence_id INTEGER UNIQUE REFERENCES recurring_occurrences(id) ON DELETE RESTRICT,
+ reversal_of INTEGER UNIQUE REFERENCES goal_movements(id) ON DELETE RESTRICT
+ );
+ CREATE INDEX IF NOT EXISTS idx_goal_movements_goal_date ON goal_movements(goal_id,moved_on);
+ CREATE TABLE IF NOT EXISTS recurring_rules (
+ recurring_id INTEGER NOT NULL REFERENCES recurrings(id) ON DELETE CASCADE, period TEXT NOT NULL,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents>0), due_day INTEGER NOT NULL CHECK(due_day BETWEEN 1 AND 31),
+ PRIMARY KEY(recurring_id,period)
+ );
+ `);
+ db.exec('COMMIT');
+} catch(e) {db.exec('ROLLBACK');throw e;}

@@ -55,4 +55,22 @@ Se a porta 3000 estiver ocupada, rode `npm run dev -- -p 3001` e acesse `http://
 - Dashboard: previsões, pendências e atrasados.
 - Para restaurar um backup `.db`: **pare o servidor**, copie a pasta `data/` para segurança, substitua `data/financas.db` pelo arquivo baixado e reinicie o servidor. Não restaure com o aplicativo aberto.
 
-**Limites atuais:** projeção do dashboard considera pendências globais, não apenas as que vencerão no mês; não há processamento automático de faturas, transferências internas, importação de extratos nem restauração por upload. A alteração de regras futuras preserva ocorrências personalizadas/quitadas; para manter a história correta, evite cadastrar retroativamente regras com muitos anos de antecedência sem revisão.
+**Limites atuais:** não há processamento automático de faturas, transferências diretas entre contas, importação de extratos nem restauração por upload. A projeção considera o mês selecionado; transferências para metas possuem histórico próprio. A alteração de regras futuras preserva ocorrências personalizadas/quitadas.
+
+## Contas e reservas para metas
+
+O planejamento permite selecionar **Todas as contas** ou uma conta específica. Recorrências mantêm a conta escolhida; nenhum formulário seleciona automaticamente a primeira conta. Saldo disponível e projeção utilizam os mesmos cálculos nos cards e no planejamento. Ao selecionar meses fora da janela inicial, a API gera as ocorrências daquele período de forma idempotente.
+
+Na aba **Metas**, use **Adicionar**, **Retirar**, **Histórico dos aportes** e **Aporte mensal**. Todo novo aporte exige conta de origem e data; retiradas creditam a conta de destino. Aportes/retiradas são transferências internas e não entram nos relatórios de consumo. O patrimônio soma saldos disponíveis e valores reservados. Cada movimento pode ser estornado uma vez, na conta original, desde que a meta tenha saldo para devolver o valor. O histórico permanece preservado. A confirmação de previsão mensal é feita no planejamento, onde também é possível editar só um mês, ignorá-lo ou alterar valores futuros.
+
+### Migração
+
+A inicialização aplica automaticamente uma migração aditiva e transacional: adiciona `recurrings.goal_id`, cria `goal_movements` (conta, meta, valor, data, chave única da operação, referência única à ocorrência e ao estorno) e `recurring_rules` (valor/dia por mês de vigência). Não é preciso executar SQL ou substituir o banco. `saved_cents` antigo permanece intacto: não há débitos retroativos nem lançamentos fictícios. Valores antigos continuam sendo reservas sem origem conciliada; não existe conciliação automática desses valores com contas.
+
+Novos movimentos e progresso da meta são gravados na mesma transação SQLite. Reenvios com a mesma chave retornam o resultado anterior; uma ocorrência não pode financiar a meta duas vezes. Estornos criam um movimento inverso e cancelam a previsão originalmente confirmada. Os valores usam centavos inteiros.
+
+### Verificações e limites
+
+Execute `npm test`, `npm run typecheck` e `npm run build`. Os testes usam SQLite temporário, sem criar Nubank/PicPay no banco do usuário. Incluem duas contas, filtros numéricos/string, consolidação, aportes, retiradas, estornos, idempotência, edição mensal/futura, preservação patrimonial e migração de reserva antiga. Não há script/configuração de lint no projeto.
+
+A projeção considera pendências do mês selecionado e parte dos saldos reais atuais; meses intermediários não são simulados. Parcelas sem conta definida só integram a projeção consolidada; parcelas de cartão usam a conta associada ao cartão quando disponível. Transferências diretas entre duas contas continuam fora desta versão; transferências via reserva da meta têm histórico próprio. Reservas antigas são mostradas como valores declarados, sem inferir se já estavam incluídas em algum saldo bancário. Validação visual manual em navegador não foi automatizada.
