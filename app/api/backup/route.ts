@@ -1,9 +1,11 @@
-import db from '@/lib/db';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 export const runtime='nodejs';
 export async function GET(){
+ // Access the database only when the endpoint is invoked, never while Next.js
+ // collects route metadata in parallel build workers.
+ const {default:db}=await import('@/lib/db');
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lumi-backup-'));
  const filename=path.join(dir,'financas.db');
  try{

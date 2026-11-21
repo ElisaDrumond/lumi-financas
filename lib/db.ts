@@ -5,7 +5,11 @@ import path from 'node:path';
 const filepath = process.env.LUMI_DB_PATH || path.join(process.cwd(), 'data', 'financas.db');
 fs.mkdirSync(path.dirname(filepath), { recursive: true });
 const db = new DatabaseSync(filepath);
-db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
+// A busy timeout must be active *before* journal-mode initialization: concurrent
+// server workers may open the same SQLite file during startup.
+db.exec('PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON;');
+const journalMode = db.prepare('PRAGMA journal_mode').get() as {journal_mode:string};
+if(journalMode.journal_mode.toLowerCase() !== 'wal')db.exec('PRAGMA journal_mode = WAL;');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS accounts (
