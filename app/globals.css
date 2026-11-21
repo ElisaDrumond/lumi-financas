@@ -50,3 +50,35 @@
 .expense-chart-empty{padding:20px 0;text-align:center;color:#9a8ca8;font-size:13px}
 .expense-chart .footnote{margin:18px 0 0}
 @media(max-width:720px){.expense-chart{padding:20px 17px}.expense-chart-layout{grid-template-columns:1fr;gap:18px}.expense-chart-circle{width:205px}.expense-chart-legend-row{grid-template-columns:12px minmax(0,1fr) 50px minmax(75px,auto);gap:7px}.expense-chart-hole strong{font-size:15px}}
+
+/* Category editing + distinct-but-soft palette */
+.category-header-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.category-edit-btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;border-radius:10px;background:transparent;color:#9b84d8;cursor:pointer;width:35px;height:35px;margin-left:auto;transition:background .15s}
+.category-edit-btn:hover,.category-edit-btn:focus-visible{background:#f2ebff;border-color:#e5dafa}
+.category-color-picker{display:grid;gap:14px}
+.category-color-swatches{display:flex;flex-wrap:wrap;gap:10px;padding:12px;border:1px solid #ede7f5;border-radius:15px;background:rgba(255,255,255,.45)}
+.category-swatch{width:30px;height:30px;border-radius:11px;border:2px solid white;box-shadow:0 1px 5px #5c4a701a;cursor:pointer;transition:transform .16s,box-shadow .16s}
+.category-swatch:hover{transform:translateY(-2px) scale(1.08)}
+.category-swatch.active{outline:2px solid #7e6fc6;outline-offset:2px;box-shadow:0 3px 10px #66559a36}
+.category-color-custom{display:flex;align-items:center;gap:12px;color:#82768e;font-size:12px}
+.category-color-custom label{font-weight:600}
+.category-color-custom input[type=color]{appearance:none;width:40px;height:32px;cursor:pointer;border:1px solid #e4ddf1;background:white;border-radius:10px;padding:3px}
+.category-color-custom span{font-family:monospace;color:#8f819a}
+/* Lumi month picker replaces the operating-system's default month popup. */
+.lumi-month-picker{position:relative;min-width:200px}
+.lumi-month-trigger{display:flex;align-items:center;gap:10px;justify-content:space-between;width:100%;min-height:43px;padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.72);color:#5e5379;border:1px solid #e6dff0;font:inherit;cursor:pointer}
+.lumi-month-trigger:hover{border-color:#b8a2ed}
+.lumi-month-trigger span{flex:1;text-align:left;white-space:nowrap}
+.month-trigger-chevron{transition:transform .2s}.month-trigger-chevron.is-open{transform:rotate(90deg)}
+.lumi-month-overlay{position:absolute;z-index:150;top:calc(100% + 8px);left:0;width:295px;max-width:min(295px,90vw);padding:16px;border-radius:21px;border:1px solid rgba(218,203,236,.85);background:#fcfaff;box-shadow:0 20px 48px rgba(92,71,137,.2)}
+.lumi-month-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.lumi-month-head strong{font-size:16px;color:#514765}
+.lumi-month-head button{display:grid;place-items:center;width:31px;height:31px;border:0;background:#f3ecfe;color:#8974bf;border-radius:10px;cursor:pointer}
+.lumi-month-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.lumi-month-grid button{background:#f5f1fa;color:#766c8b;border:1px solid transparent;border-radius:12px;padding:10px 4px;font:inherit;font-size:12px;cursor:pointer}
+.lumi-month-grid button:hover{background:#e9dffb}
+.lumi-month-grid button.is-selected{background:linear-gradient(135deg,#a388ea,#8aa7e9);color:white;box-shadow:0 5px 12px #8b78d53d}
+.lumi-month-bottom{display:flex;justify-content:space-between;margin-top:12px;border-top:1px solid #eee9f4;padding-top:10px}
+.lumi-month-bottom button{border:0;background:none;color:#9176cb;font-size:12px;font-weight:650;cursor:pointer;padding:5px}
+.lumi-month-required{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+@media(max-width:700px){.category-header-actions{width:100%}.lumi-month-overlay{left:auto;right:0}.category-color-swatches{gap:8px}}
