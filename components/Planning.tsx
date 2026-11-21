@@ -8,7 +8,7 @@ import {planningSummary,carryoverItems,expenseByCategory,sameAccount,FinanceData
 import {useMemo,useState} from 'react';
 import {Plus,Check,Edit2,Pause,Play,OctagonX,CalendarClock,RefreshCw} from 'lucide-react';
 type Row=Record<string,any>;
-type Props={data:FinanceData&{accounts:Row[],categories:Row[],recurrings:Row[],occurrences:Row[],payments:Row[],transactions:Row[],installments:Row[]},refresh:(period?:string)=>Promise<void>};
+type Props={data:FinanceData&{accounts:Row[],categories:Row[],recurrings:Row[],occurrences:Row[],payments:Row[],transactions:Row[],installments:Row[],purchases:Row[]},refresh:(period?:string)=>Promise<void>};
 const money=(n:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format((n||0)/100);
 const iso=()=>new Date().toLocaleDateString('en-CA');
 const toCents=(v:string)=>Math.round(Number(v.replace(',','.'))*100);
