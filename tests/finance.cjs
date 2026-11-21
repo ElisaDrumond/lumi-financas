@@ -207,10 +207,10 @@ test('pendências anteriores acompanham meses sem duplicar a obrigação ou alte
  state=readAll(view);
  carry=carryoverItems(state,view);
  assert.ok(carry.some(x=>x.kind==='installment'&&x.id===installment.id));
- assert.equal(carry.find(x=>x.kind==='occurrence').remaining_cents,6000);
+ assert.equal(carry.find(x=>x.kind==='occurrence'&&x.id===oc.id).remaining_cents,6000);
  assert.equal(carry.find(x=>x.kind==='transaction'&&x.id===expense).remaining_cents,5000);
  assert.equal(carry.find(x=>x.kind==='transaction'&&x.id===income).remaining_cents,15000);
- assert.equal(carry.find(x=>x.kind==='installment').remaining_cents,6000);
+ assert.equal(carry.find(x=>x.kind==='installment'&&x.id===installment.id).remaining_cents,6000);
  assert.equal(accountBalance(state,a),195500);
  assert.equal(planningSummary(state,view,a).toReceive,15000);
  assert.equal(planningSummary(state,view,a).toPay,17000);
