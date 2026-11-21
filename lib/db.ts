@@ -119,3 +119,15 @@ try {
  db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_status_date ON transactions(status,date)');
  db.exec('COMMIT');
 } catch(error){db.exec('ROLLBACK');throw error;}
+
+// Additive ledger for actual partial receipts/payments of planned one-off transactions.
+db.exec(`CREATE TABLE IF NOT EXISTS transaction_payments (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE RESTRICT,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+ paid_on TEXT NOT NULL,
+ account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+ settled INTEGER NOT NULL DEFAULT 0 CHECK(settled IN (0,1))
+);
+CREATE INDEX IF NOT EXISTS idx_transaction_payments_tx ON transaction_payments(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_transaction_payments_date ON transaction_payments(paid_on);`);

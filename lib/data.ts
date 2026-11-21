@@ -18,6 +18,7 @@ export function readAll(period?:string) {
   recurrings: query('SELECT r.*,a.name AS account_name,c.name AS category_name FROM recurrings r JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=r.category_id ORDER BY r.id DESC'),
   occurrences: query(`SELECT o.*,r.description,r.type,r.behavior,r.goal_id,r.account_id,r.amount_cents AS base_amount_cents,a.name AS account_name,c.name AS category_name,COALESCE((SELECT SUM(p.amount_cents) FROM payment_records p WHERE p.occurrence_id=o.id),0) AS paid_cents FROM recurring_occurrences o JOIN recurrings r ON r.id=o.recurring_id JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=o.category_id ORDER BY o.due_on ASC`),
   payments: query('SELECT * FROM payment_records ORDER BY paid_on DESC'),
+  transactionPayments: query('SELECT * FROM transaction_payments ORDER BY paid_on DESC,id DESC'),
   adjustments: query('SELECT * FROM balance_adjustments ORDER BY adjusted_on DESC'),
  };
 }
@@ -50,12 +51,28 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const target=id(payload.id);
    const tx=db.prepare('SELECT id,status FROM transactions WHERE id=?').get(target) as {id:number;status:string}|undefined;
    if(!tx||tx.status!=='completed')throw Error('Só lançamentos realizados podem voltar para previstos.');
+   if(db.prepare('SELECT 1 FROM transaction_payments WHERE transaction_id=? LIMIT 1').get(target))throw Error('Existem pagamentos vinculados: não é possível apagar movimentações reais ao tornar prevista.');
    return run("UPDATE transactions SET status='planned',actual_cents=NULL,completed_on=NULL WHERE id=? AND status='completed'",target);
+  }
+  case 'transaction-payment': {
+   const transactionId=id(payload.id),amount=positive(payload.amount_cents),account=id(payload.account_id),paid=date(payload.paid_on);
+   const settled=payload.settled===true||payload.settled==='true';
+   db.exec('BEGIN IMMEDIATE');
+   try {
+    const transaction=db.prepare('SELECT id,status,amount_cents FROM transactions WHERE id=?').get(transactionId) as {id:number;status:string;amount_cents:number}|undefined;
+    if(!transaction||transaction.status!=='planned')throw Error('Lançamento já concluído ou indisponível.');
+    const previous=db.prepare('SELECT COALESCE(SUM(amount_cents),0) AS total FROM transaction_payments WHERE transaction_id=?').get(transactionId) as {total:number};
+    if(!settled&&previous.total+amount>=transaction.amount_cents)throw Error('Marque a quitação integral para encerrar ou registre um valor parcial menor que o restante.');
+    const result=run('INSERT INTO transaction_payments(transaction_id,amount_cents,paid_on,account_id,settled) VALUES(?,?,?,?,?)',transactionId,amount,paid,account,settled?1:0);
+    if(settled)run("UPDATE transactions SET status='completed',actual_cents=?,completed_on=? WHERE id=?",previous.total+amount,paid,transactionId);
+    db.exec('COMMIT');return result;
+   }catch(error){db.exec('ROLLBACK');throw error;}
   }
   case 'transaction-complete': {
    const target=id(payload.id),actual=positive(payload.actual_cents),completed=date(payload.completed_on);
    const tx=db.prepare('SELECT id,status FROM transactions WHERE id=?').get(target) as {id:number;status:string}|undefined;
    if(!tx||tx.status!=='planned')throw Error('Este lançamento não está pendente de confirmação.');
+   if(db.prepare('SELECT 1 FROM transaction_payments WHERE transaction_id=? LIMIT 1').get(target))throw Error('Esta transação possui pagamentos parciais. Conclua pelo registro de pagamento.');
    return run("UPDATE transactions SET status='completed',actual_cents=?,completed_on=? WHERE id=? AND status='planned'",actual,completed,target);
   }
   case 'goals': return run('INSERT INTO goals(name,target_cents,saved_cents,target_date,color) VALUES(?,?,?,?,?)',text(payload.name),positive(payload.target_cents),integer(payload.saved_cents??0),payload.target_date?date(payload.target_date):null,name(payload.color)||'#a48bf5');
@@ -196,5 +213,6 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
 export function removeDb(entity:string,idValue:number){
  if(!['transactions','goals','categories','cards','purchases','accounts','recurrings'].includes(entity))throw Error('Tipo inválido.');
  if(!Number.isSafeInteger(idValue)||idValue<=0)throw Error('ID inválido.');
+ if(entity==='transactions'&&db.prepare('SELECT 1 FROM transaction_payments WHERE transaction_id=? LIMIT 1').get(idValue))throw Error('Lançamento possui pagamentos; preserve o histórico financeiro.');
  return db.prepare(`DELETE FROM ${entity} WHERE id=?`).run(idValue);
 }
