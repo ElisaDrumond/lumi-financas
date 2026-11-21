@@ -269,3 +269,27 @@ test('editar categoria mantém vínculos e alterar cores não mexe em valores',(
  assert.throws(()=>updateDb('category-colors',{colors:[{id,color:'not-a-hex'}]}));
  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
+
+test('editar parcela altera valor e vencimento e recalcula total sem tocar em pagamentos',()=>{
+ const a=add('accounts',{name:'Conta edição de parcelas',initial_balance:50000});
+ const month=shifted(5),first=month+'-10';
+ const purchase=add('purchases',{description:'Terno para casamento',total_cents:20000,installments_count:2,method:'boleto',purchased_on:month+'-01',first_due_on:first});
+ const before=readAll(month),parts=before.installments.filter(i=>i.purchase_id===purchase).sort((a,b)=>a.number-b.number);
+ assert.equal(parts.length,2);assert.equal(before.purchases.find(p=>p.id===purchase).total_cents,20000);
+ updateDb('installment-edit',{id:parts[0].id,amount_cents:12500,due_on:month+'-15'});
+ let state=readAll(month);
+ assert.equal(state.installments.find(i=>i.id===parts[0].id).amount_cents,12500);
+ assert.equal(state.installments.find(i=>i.id===parts[0].id).due_on,month+'-15');
+ assert.equal(state.installments.find(i=>i.id===parts[1].id).amount_cents,10000);
+ assert.equal(state.purchases.find(p=>p.id===purchase).total_cents,22500);
+ assert.equal(accountBalance(state,a),50000);
+ assert.throws(()=>updateDb('installment-edit',{id:parts[0].id,amount_cents:0,due_on:first}));
+ assert.throws(()=>updateDb('installment-edit',{id:parts[0].id,amount_cents:7500,due_on:'2026-02-30'}));
+ add('record-payment',{kind:'installment',id:parts[0].id,amount_cents:2000,paid_on:month+'-16',account_id:a,settled:false});
+ assert.throws(()=>updateDb('installment-edit',{id:parts[0].id,amount_cents:5000,due_on:month+'-17'}),/pagamentos registrados/);
+ state=readAll(month);
+ assert.equal(state.installments.find(i=>i.id===parts[0].id).amount_cents,12500);
+ assert.equal(state.purchases.find(p=>p.id===purchase).total_cents,22500);
+ assert.equal(accountBalance(state,a),48000);
+ assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+});
