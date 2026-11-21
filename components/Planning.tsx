@@ -1,5 +1,5 @@
-import MoneyInput from './MoneyInput';
 'use client';
+import MoneyInput from './MoneyInput';
 import FinancialSummary from './FinancialSummary';
 import {useConfirm} from './ConfirmDialog';
 import {planningSummary,sameAccount,FinanceData} from '@/lib/finance';
