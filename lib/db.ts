@@ -40,3 +40,48 @@ if (!first.n) {
  ]) add.run(...x);
 }
 export default db;
+
+// V1 additive migrations: existing user data stays untouched.
+db.exec(`
+CREATE TABLE IF NOT EXISTS recurrings (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, description TEXT NOT NULL,
+ type TEXT NOT NULL CHECK(type IN ('income','expense')),
+ behavior TEXT NOT NULL CHECK(behavior IN ('fixed','variable')),
+ amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+ account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+ category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+ start_on TEXT NOT NULL, end_on TEXT, due_day INTEGER NOT NULL CHECK(due_day BETWEEN 1 AND 31),
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','ended')),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS recurring_occurrences (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ recurring_id INTEGER NOT NULL REFERENCES recurrings(id) ON DELETE CASCADE,
+ period TEXT NOT NULL, due_on TEXT NOT NULL,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+ category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','partial','paid','cancelled')),
+ customized INTEGER NOT NULL DEFAULT 0,
+ UNIQUE(recurring_id, period)
+);
+CREATE TABLE IF NOT EXISTS payment_records (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ occurrence_id INTEGER REFERENCES recurring_occurrences(id) ON DELETE RESTRICT,
+ installment_id INTEGER REFERENCES installments(id) ON DELETE RESTRICT,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+ paid_on TEXT NOT NULL,
+ account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+ settled INTEGER NOT NULL DEFAULT 0,
+ CHECK ((occurrence_id IS NOT NULL AND installment_id IS NULL) OR (occurrence_id IS NULL AND installment_id IS NOT NULL))
+);
+CREATE TABLE IF NOT EXISTS balance_adjustments (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents <> 0),
+ adjusted_on TEXT NOT NULL,
+ note TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_occurrences_period ON recurring_occurrences(period);
+CREATE INDEX IF NOT EXISTS idx_payments_oc ON payment_records(occurrence_id);
+CREATE INDEX IF NOT EXISTS idx_payments_inst ON payment_records(installment_id);
+`);

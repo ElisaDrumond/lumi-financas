@@ -47,3 +47,12 @@ npm run build
 ```
 
 Se a porta 3000 estiver ocupada, rode `npm run dev -- -p 3001` e acesse `http://127.0.0.1:3001`.
+
+## Atualização V1 — recorrências e pagamentos reais
+- Página **Planejamento**: cadastre receitas/despesas recorrentes, fixas ou variáveis, e altere cada ocorrência independentemente.
+- Quitação integral ou parcial: informe o valor efetivamente pago (incluindo juros/multas/descontos), a data e a conta. Os pagamentos são registrados individualmente.
+- Aba **Dados e backup**: baixe um snapshot SQLite íntegro e registre ajustes de conciliação sem criar receitas fictícias.
+- Dashboard: previsões, pendências e atrasados.
+- Para restaurar um backup `.db`: **pare o servidor**, copie a pasta `data/` para segurança, substitua `data/financas.db` pelo arquivo baixado e reinicie o servidor. Não restaure com o aplicativo aberto.
+
+**Limites atuais:** projeção do dashboard considera pendências globais, não apenas as que vencerão no mês; não há processamento automático de faturas, transferências internas, importação de extratos nem restauração por upload. A alteração de regras futuras preserva ocorrências personalizadas/quitadas; para manter a história correta, evite cadastrar retroativamente regras com muitos anos de antecedência sem revisão.
