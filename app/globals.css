@@ -82,3 +82,24 @@
 .lumi-month-bottom button{border:0;background:none;color:#9176cb;font-size:12px;font-weight:650;cursor:pointer;padding:5px}
 .lumi-month-required{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
 @media(max-width:700px){.category-header-actions{width:100%}.lumi-month-overlay{left:auto;right:0}.category-color-swatches{gap:8px}}
+
+/* Expandable planning groups, matching installment purchase cards. */
+.planning-fold{min-width:0;margin:14px 0 18px;border:1px solid rgba(255,255,255,.8);border-radius:22px;background:linear-gradient(115deg,rgba(255,255,255,.68),rgba(247,243,254,.6),rgba(239,250,255,.58));overflow:hidden}
+.planning-fold-head{list-style:none;cursor:pointer;display:flex;align-items:center;gap:14px;padding:20px 23px;color:#3d3554}
+.planning-fold-head::-webkit-details-marker{display:none}
+.planning-fold-head>strong{flex:1;font:700 18px 'Outfit',sans-serif}
+.planning-fold-toggle{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#f0eafa;color:#9277d2;border-radius:12px;width:38px;height:38px}
+.planning-fold-toggle svg{transition:transform .18s}
+.planning-fold[open] .planning-fold-toggle svg{transform:rotate(90deg)}
+.planning-fold-head:hover{background:rgba(241,234,251,.35)}
+.planning-fold-head:focus-visible{outline:2px solid #a58ee2;outline-offset:-3px}
+.planning-fold-body{border-top:1px solid rgba(184,169,208,.13);padding:18px 20px 22px}
+.planning-fold-body>.footnote{margin:0 0 14px}
+.planning-fold-body .table-wrap{margin-top:8px}
+.lumi-sort-control{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin:12px 0 15px;color:#8d829e;font-size:12px;font-weight:600}
+.lumi-sort-control select{min-width:190px;max-width:100%;padding:9px 13px;border-radius:12px;border:1px solid #e5def3;background:#fcfaff;color:#655876;font:inherit;cursor:pointer;outline-color:#ae9be7}
+.installment-sort-controls{display:flex;gap:18px;justify-content:flex-end;flex-wrap:wrap;margin-bottom:15px}
+.planning-fold .purchase-list{margin:0}
+.planning-fold .carryover-list{margin-bottom:0}
+.planning-fold .carryover-empty{margin-bottom:0}
+@media(max-width:700px){.planning-fold-head{padding:14px 13px;gap:10px}.planning-fold-head>strong{font-size:15px}.planning-fold-body{padding:14px 10px}.lumi-sort-control{justify-content:flex-start}.installment-sort-controls{justify-content:flex-start}}
