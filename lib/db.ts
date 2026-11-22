@@ -185,3 +185,49 @@ CREATE TABLE IF NOT EXISTS category_budget_months (
  amount_cents INTEGER NOT NULL CHECK(amount_cents>0),
  PRIMARY KEY(budget_id,period)
 );`);
+
+/** Reusable spending subcategories, independent of top-level categories. */
+db.exec(`CREATE TABLE IF NOT EXISTS budget_labels (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+ name TEXT NOT NULL COLLATE NOCASE,
+ UNIQUE(category_id,name)
+);
+CREATE TABLE IF NOT EXISTS budget_envelopes (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ label_id INTEGER NOT NULL UNIQUE REFERENCES budget_labels(id) ON DELETE CASCADE,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents>0),
+ start_period TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused')),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS budget_envelope_months (
+ budget_id INTEGER NOT NULL REFERENCES budget_envelopes(id) ON DELETE CASCADE,
+ period TEXT NOT NULL,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents>0),
+ PRIMARY KEY(budget_id,period)
+);
+CREATE TABLE IF NOT EXISTS budget_label_migrations (
+ name TEXT PRIMARY KEY
+);`);
+for(const table of ['transactions','purchases','recurrings'] as const){
+ const cols=db.prepare(`PRAGMA table_info(${table})`).all() as {name:string}[];
+ if(!cols.some(c=>c.name==='budget_label_id'))db.exec(`ALTER TABLE ${table} ADD COLUMN budget_label_id INTEGER REFERENCES budget_labels(id) ON DELETE SET NULL`);
+}
+// Preserve category-wide budgets as reusable "Geral" envelopes exactly once.
+if(!db.prepare("SELECT 1 FROM budget_label_migrations WHERE name='category-budgets-v1'").get()){
+ db.exec('BEGIN IMMEDIATE');
+ try{
+  const legacy=db.prepare('SELECT * FROM category_budgets').all() as {id:number;category_id:number;amount_cents:number;start_period:string;status:string}[];
+  for(const b of legacy){
+   db.prepare("INSERT OR IGNORE INTO budget_labels(category_id,name) VALUES(?,'Geral')").run(b.category_id);
+   const label=db.prepare("SELECT id FROM budget_labels WHERE category_id=? AND name='Geral'").get(b.category_id) as {id:number};
+   db.prepare('INSERT OR IGNORE INTO budget_envelopes(label_id,amount_cents,start_period,status) VALUES(?,?,?,?)').run(label.id,b.amount_cents,b.start_period,b.status);
+   const envelope=db.prepare('SELECT id FROM budget_envelopes WHERE label_id=?').get(label.id) as {id:number};
+   const months=db.prepare('SELECT period,amount_cents FROM category_budget_months WHERE budget_id=?').all(b.id) as {period:string;amount_cents:number}[];
+   for(const m of months)db.prepare('INSERT OR IGNORE INTO budget_envelope_months(budget_id,period,amount_cents) VALUES(?,?,?)').run(envelope.id,m.period,m.amount_cents);
+  }
+  db.prepare("INSERT INTO budget_label_migrations(name) VALUES('category-budgets-v1')").run();
+  db.exec('COMMIT');
+ }catch(e){db.exec('ROLLBACK');throw e;}
+}
