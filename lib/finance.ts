@@ -157,7 +157,9 @@ export function forecastOpening(data:FinanceData,period:string,account:string|nu
   let opening=included.reduce((s,c)=>s+c.reconciled_cents,0);
   let cursor=new Date(Date.UTC(Number(latest.period.slice(0,4)),Number(latest.period.slice(5)),1)).toISOString().slice(0,7);
   for(let i=0;cursor<period&&i<240;i++){
-   opening+=monthlyForecast(data,cursor,account).net+oldSettlementFlow(data,cursor,latest.period,account).net;
+   const monthly=monthlyForecast(data,cursor,account);
+   // An unused spending envelope is a monthly provision, not a bank debit or carryover.
+   opening+=monthly.net+monthly.budgetAdditional+oldSettlementFlow(data,cursor,latest.period,account).net;
    cursor=new Date(Date.UTC(Number(cursor.slice(0,4)),Number(cursor.slice(5)),1)).toISOString().slice(0,7);
   }
   return opening;
@@ -176,7 +178,8 @@ export function forecastOpening(data:FinanceData,period:string,account:string|nu
  let opening=baseline;
  // The initial account balances are the baseline; only known budget months are rolled forward.
  for(let i=0;cursor<period&&i<240;i++){
-  opening+=monthlyForecast(data,cursor,account).net;
+  const monthly=monthlyForecast(data,cursor,account);
+  opening+=monthly.net+monthly.budgetAdditional;
   const next=new Date(Date.UTC(Number(cursor.slice(0,4)),Number(cursor.slice(5)),1)).toISOString().slice(0,7);
   cursor=next;
  }
