@@ -105,3 +105,25 @@
 @media(max-width:700px){.planning-fold-head{padding:14px 13px;gap:10px}.planning-fold-head>strong{font-size:15px}.planning-fold-body{padding:14px 10px}.lumi-sort-control{justify-content:flex-start}.installment-sort-controls{justify-content:flex-start}}
 
 .lumi-transaction-account{display:inline-flex;align-items:center;gap:10px;color:#82778f;font-size:12px;margin-bottom:10px}.lumi-transaction-account select{padding:9px 12px;background:#fcfaff;border:1px solid #e6dff0;border-radius:12px;color:#605675;font:inherit;max-width:230px}
+
+/* Align every toolbar and sorter to the left, with consistent spacing. */
+.transaction-controls{display:flex;align-items:center;justify-content:flex-start;gap:14px 18px;flex-wrap:wrap;margin:0 0 20px}
+.transaction-controls .finance-type-filter,.transaction-controls .lumi-transaction-account,.transaction-controls .lumi-sort-control{margin:0}
+.transaction-controls .lumi-transaction-account{white-space:nowrap}
+.transaction-controls .lumi-sort-control{justify-content:flex-start}
+.installment-sort-controls{justify-content:flex-start;align-items:center;gap:12px 22px}
+.installment-sort-controls .lumi-sort-control{justify-content:flex-start;margin:0}
+.planning-toolbar{justify-content:flex-start;gap:14px 22px}
+.planning-toolbar>.pill{margin-left:auto}
+.lumi-sort-control{justify-content:flex-start}
+.planning-fold-body>.lumi-sort-control{justify-content:flex-start}
+.conservative-projection{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;padding:23px 28px;background:linear-gradient(115deg,rgba(244,241,255,.92),rgba(239,248,255,.82));border:1px solid rgba(203,194,234,.58);border-radius:22px}
+.conservative-projection-copy{min-width:0;flex:1 1 330px}
+.conservative-projection-kicker{font-size:10px;letter-spacing:.12em;font-weight:750;color:#927cba}
+.conservative-projection-copy h4{font:700 18px 'Outfit',sans-serif;color:#433b57;margin:7px 0}
+.conservative-projection-copy p{color:#877d99;font-size:12px;line-height:1.65;margin:0 0 10px;max-width:610px}
+.conservative-projection-pending{font-size:11px;color:#866f9b}
+.conservative-projection-total{display:grid;gap:7px;text-align:right;min-width:180px}
+.conservative-projection-total strong{font:750 clamp(23px,3vw,32px) 'Outfit',sans-serif;color:#665582;overflow-wrap:anywhere}
+.conservative-projection-total small{font-size:11px;color:#988aa5}
+@media(max-width:760px){.transaction-controls{align-items:flex-start;flex-direction:column}.planning-toolbar>.pill{margin-left:0}.conservative-projection{padding:18px}.conservative-projection-total{text-align:left}}
