@@ -20,6 +20,9 @@ export function readAll(period?:string) {
   payments: query('SELECT * FROM payment_records ORDER BY paid_on DESC'),
   transactionPayments: query('SELECT * FROM transaction_payments ORDER BY paid_on DESC,id DESC'),
   adjustments: query('SELECT * FROM balance_adjustments ORDER BY adjusted_on DESC'),
+  monthClosures: query('SELECT * FROM month_closures ORDER BY period DESC'),
+  monthClosureAccounts: query('SELECT * FROM month_closure_accounts ORDER BY closure_id,account_id'),
+  monthClosurePending: query('SELECT * FROM month_closure_pending ORDER BY closure_id,due_on'),
  };
 }
 export function updateDb(entity: string, payload: Record<string,unknown>) {
