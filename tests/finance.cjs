@@ -5,7 +5,7 @@ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'lumi-v2-'));
 process.env.LUMI_DB_PATH=path.join(directory,'test.db');
 const {readAll,updateDb}=require('../.test-build/data');
 const db=require('../.test-build/db').default;
-const {accountBalance,planningSummary,sameAccount}=require('../.test-build/finance');
+const {accountBalance,planningSummary,sameAccount,monthlyForecast}=require('../.test-build/finance');
 const period=new Date().toLocaleDateString('en-CA').slice(0,7),date=period+'-01';
 const shifted=(offset)=>{const [y,m]=period.split('-').map(Number);return new Date(Date.UTC(y,m-1+offset,1)).toISOString().slice(0,7)};
 const add=(entity,p)=>Number(updateDb(entity,p).lastInsertRowid);
