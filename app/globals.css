@@ -103,3 +103,5 @@
 .planning-fold .carryover-list{margin-bottom:0}
 .planning-fold .carryover-empty{margin-bottom:0}
 @media(max-width:700px){.planning-fold-head{padding:14px 13px;gap:10px}.planning-fold-head>strong{font-size:15px}.planning-fold-body{padding:14px 10px}.lumi-sort-control{justify-content:flex-start}.installment-sort-controls{justify-content:flex-start}}
+
+.lumi-transaction-account{display:inline-flex;align-items:center;gap:10px;color:#82778f;font-size:12px;margin-bottom:10px}.lumi-transaction-account select{padding:9px 12px;background:#fcfaff;border:1px solid #e6dff0;border-radius:12px;color:#605675;font:inherit;max-width:230px}
