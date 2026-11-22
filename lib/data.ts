@@ -16,7 +16,7 @@ export function readAll(period?:string) {
   goalMovements: query('SELECT m.*,g.name AS goal_name,a.name AS account_name FROM goal_movements m JOIN goals g ON g.id=m.goal_id JOIN accounts a ON a.id=m.account_id ORDER BY moved_on DESC,m.id DESC'),
   goals: query('SELECT * FROM goals ORDER BY id DESC'),
   recurrings: query('SELECT r.*,a.name AS account_name,c.name AS category_name FROM recurrings r JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=r.category_id ORDER BY r.id DESC'),
-  occurrences: query(`SELECT o.*,r.description,r.type,r.behavior,r.goal_id,r.account_id,r.amount_cents AS base_amount_cents,a.name AS account_name,c.name AS category_name,COALESCE((SELECT SUM(p.amount_cents) FROM payment_records p WHERE p.occurrence_id=o.id),0) AS paid_cents FROM recurring_occurrences o JOIN recurrings r ON r.id=o.recurring_id JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=o.category_id ORDER BY o.due_on ASC`),
+  occurrences: query(`SELECT o.*,r.description,r.type,r.behavior,r.goal_id,r.account_id,r.budget_label_id,r.amount_cents AS base_amount_cents,a.name AS account_name,c.name AS category_name,COALESCE((SELECT SUM(p.amount_cents) FROM payment_records p WHERE p.occurrence_id=o.id),0) AS paid_cents FROM recurring_occurrences o JOIN recurrings r ON r.id=o.recurring_id JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=o.category_id ORDER BY o.due_on ASC`),
   payments: query('SELECT * FROM payment_records ORDER BY paid_on DESC'),
   transactionPayments: query('SELECT * FROM transaction_payments ORDER BY paid_on DESC,id DESC'),
   adjustments: query('SELECT * FROM balance_adjustments ORDER BY adjusted_on DESC'),
@@ -214,7 +214,8 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const cat=id(payload.category_id,false);
    if(cat){const row=db.prepare('SELECT type FROM categories WHERE id=?').get(cat) as {type:string}|undefined;if(row?.type!==type)throw Error('Categoria incompatível.');}
    const goal=id(payload.goal_id,false);if(goal&&(type!=='expense'||cat))throw Error('Aportes devem ser saídas sem categoria de consumo.');
-   return run('INSERT INTO recurrings(description,type,behavior,amount_cents,account_id,category_id,start_on,end_on,due_day,goal_id) VALUES(?,?,?,?,?,?,?,?,?,?)',text(payload.description),type,behavior,positive(payload.amount_cents),id(payload.account_id),cat,start,end,day,goal);
+   const label=resolveLabel(cat,payload.budget_label_name);
+   return run('INSERT INTO recurrings(description,type,behavior,amount_cents,account_id,category_id,start_on,end_on,due_day,goal_id,budget_label_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',text(payload.description),type,behavior,positive(payload.amount_cents),id(payload.account_id),cat,start,end,day,goal,label);
   }
   case 'recurring-definition-edit': {
    const rid=id(payload.id);
@@ -236,12 +237,13 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const category=id(payload.category_id,false);
    if(category){const row=db.prepare('SELECT type FROM categories WHERE id=?').get(category) as {type:string}|undefined;if(row?.type!==type||current.goal_id)throw Error('Categoria incompatível.');}
    const amount=positive(payload.amount_cents),account=id(payload.account_id),description=text(payload.description);
+   const label=resolveLabel(category,payload.budget_label_name);
    db.exec('BEGIN IMMEDIATE');
    try {
     // Every generated occurrence is still an untouched forecast. Rebuild it from the revised rule.
     run('DELETE FROM recurring_occurrences WHERE recurring_id=?',rid);
-    run('UPDATE recurrings SET description=?,type=?,behavior=?,amount_cents=?,account_id=?,category_id=?,start_on=?,end_on=?,due_day=? WHERE id=?',
-     description,type,behavior,amount,account,category,start,end,day,rid);
+    run('UPDATE recurrings SET description=?,type=?,behavior=?,amount_cents=?,account_id=?,category_id=?,start_on=?,end_on=?,due_day=?,budget_label_id=? WHERE id=?',
+     description,type,behavior,amount,account,category,start,end,day,label,rid);
     db.exec('COMMIT');
    }catch(e){db.exec('ROLLBACK');throw e;}
    return {lastInsertRowid:rid};
