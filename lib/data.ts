@@ -33,6 +33,10 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
  const id = (v:unknown,required=true) => {if(v===null||v===undefined||v===''){if(required)throw Error('Selecione o item obrigatório.');return null;}return positive(v);};
  const date = (v:unknown) => {const s=name(v);if(!/^\d{4}-\d{2}-\d{2}$/.test(s)||Number.isNaN(Date.parse(s+'T12:00:00Z'))||new Date(s+'T12:00:00Z').toISOString().slice(0,10)!==s) throw Error('Data inválida.');return s;};
  const recurringStart=(v:unknown)=>{const value=name(v);const month=/^\d{4}-(0[1-9]|1[0-2])$/.test(value)?value:value.match(/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/)?.[0].slice(0,7);if(!month)throw Error('Selecione um mês de início válido.');return date(month+'-01');};
+ const ensureOpen=(when:string)=>{
+  const locked=db.prepare('SELECT 1 FROM month_closures WHERE period=?').get(when.slice(0,7));
+  if(locked)throw Error('Este mês está fechado. Reabra o fechamento antes de alterar movimentos com esta data.');
+ };
  const text = (v:unknown) => {const s=name(v);if(!s||s.length>120)throw Error('Preencha o nome ou descrição (até 120 caracteres).');return s;};
  const run=(sql:string,...args:(string|number|null)[])=>db.prepare(sql).run(...args);
  switch(entity){
@@ -68,7 +72,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    if(!['income','expense'].includes(type)||!['planned','completed'].includes(status))throw Error('Tipo ou situação inválida.');
    const cat=id(payload.category_id,false);
    if(cat){const row=db.prepare('SELECT type FROM categories WHERE id=?').get(cat) as {type:string}|undefined;if(!row||row.type!==type)throw Error('Categoria incompatível.');}
-   const targetDate=date(payload.date);
+   const targetDate=date(payload.date);ensureOpen(targetDate);
    const completedOn=status==='completed'?date(payload.completed_on||targetDate):null;
    const amount=positive(payload.amount_cents);
    return run('INSERT INTO transactions(description,amount_cents,type,date,category_id,account_id,status,actual_cents,completed_on) VALUES(?,?,?,?,?,?,?,?,?)',
@@ -82,7 +86,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    return run("UPDATE transactions SET status='planned',actual_cents=NULL,completed_on=NULL WHERE id=? AND status='completed'",target);
   }
   case 'transaction-payment': {
-   const transactionId=id(payload.id),amount=positive(payload.amount_cents),account=id(payload.account_id),paid=date(payload.paid_on);
+   const transactionId=id(payload.id),amount=positive(payload.amount_cents),account=id(payload.account_id),paid=date(payload.paid_on);ensureOpen(paid);
    const settled=payload.settled===true||payload.settled==='true';
    db.exec('BEGIN IMMEDIATE');
    try {
@@ -96,7 +100,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    }catch(error){db.exec('ROLLBACK');throw error;}
   }
   case 'transaction-complete': {
-   const target=id(payload.id),actual=positive(payload.actual_cents),completed=date(payload.completed_on);
+   const target=id(payload.id),actual=positive(payload.actual_cents),completed=date(payload.completed_on);ensureOpen(completed);
    const tx=db.prepare('SELECT id,status FROM transactions WHERE id=?').get(target) as {id:number;status:string}|undefined;
    if(!tx||tx.status!=='planned')throw Error('Este lançamento não está pendente de confirmação.');
    if(db.prepare('SELECT 1 FROM transaction_payments WHERE transaction_id=? LIMIT 1').get(target))throw Error('Esta transação possui pagamentos parciais. Conclua pelo registro de pagamento.');
@@ -128,6 +132,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const type=name(payload.type),behavior=name(payload.behavior);
    if(!['income','expense'].includes(type)||!['fixed','variable'].includes(behavior))throw Error('Tipo ou comportamento inválido.');
    const start=recurringStart(payload.start_on),end=payload.end_on?date(payload.end_on):null;
+   const lastClosed=db.prepare('SELECT MAX(period) AS period FROM month_closures').get() as {period:string|null};if(lastClosed.period&&start.slice(0,7)<=lastClosed.period)throw Error('Esta recorrência atingiria um mês fechado. Reabra o histórico antes de alterar o cadastro.');
    if(end&&end<start)throw Error('A data final deve ser posterior à inicial.');
    const day=integer(payload.due_day);if(day<1||day>31)throw Error('Dia de vencimento inválido.');
    const cat=id(payload.category_id,false);
@@ -175,6 +180,8 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const amount=positive(payload.amount_cents),day=integer(payload.due_day);
    if(day<1||day>31)throw Error('Dia inválido.');
    const period=name(payload.period);
+   const lastClosed=db.prepare('SELECT MAX(period) AS period FROM month_closures').get() as {period:string|null};
+   if(lastClosed.period&&(scope==='all'||period<=lastClosed.period))throw Error('Há meses fechados nesta recorrência. Reabra-os antes de alterar regras históricas.');
    if(scope==='future'&&!/^\d{4}-\d{2}$/.test(period))throw Error('Mês inválido.');
    db.exec('BEGIN IMMEDIATE');
    try{
@@ -190,7 +197,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    return {lastInsertRowid:rid};
   }
   case 'occurrence-edit': {
-   const oid=id(payload.id);const record=db.prepare('SELECT status FROM recurring_occurrences WHERE id=?').get(oid) as {status:string}|undefined;
+   const oid=id(payload.id);const scheduled=db.prepare('SELECT due_on FROM recurring_occurrences WHERE id=?').get(oid) as {due_on:string}|undefined;if(scheduled)ensureOpen(scheduled.due_on);const record=db.prepare('SELECT status FROM recurring_occurrences WHERE id=?').get(oid) as {status:string}|undefined;
    if(!record || record.status==='paid'||record.status==='cancelled')throw Error('Esta ocorrência já está encerrada.');
    const amount=positive(payload.amount_cents);
    const payments=db.prepare('SELECT COALESCE(SUM(amount_cents),0) AS total FROM payment_records WHERE occurrence_id=?').get(oid) as {total:number};
@@ -199,13 +206,15 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
   }
   case 'occurrence-cancel': {
    const oid=id(payload.id);
+   const scheduled=db.prepare('SELECT due_on FROM recurring_occurrences WHERE id=?').get(oid) as {due_on:string}|undefined;if(scheduled)ensureOpen(scheduled.due_on);
    const exists=db.prepare('SELECT 1 FROM payment_records WHERE occurrence_id=? LIMIT 1').get(oid);
    if(exists)throw Error('Não é possível cancelar uma conta que já possui pagamento.');
    return run("UPDATE recurring_occurrences SET status='cancelled',customized=1 WHERE id=? AND status='pending'",oid);
   }
   case 'installment-edit': {
    const installmentId=id(payload.id);
-   const amount=positive(payload.amount_cents),due=date(payload.due_on);
+   const amount=positive(payload.amount_cents),due=date(payload.due_on);ensureOpen(due);
+   const oldDue=db.prepare('SELECT due_on FROM installments WHERE id=?').get(installmentId) as {due_on:string}|undefined;if(oldDue)ensureOpen(oldDue.due_on);
    db.exec('BEGIN IMMEDIATE');
    try {
     const current=db.prepare('SELECT id,purchase_id,paid_on FROM installments WHERE id=?').get(installmentId) as {id:number;purchase_id:number;paid_on:string|null}|undefined;
@@ -219,7 +228,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    }catch(error){db.exec('ROLLBACK');throw error;}
   }
   case 'record-payment': {
-   const kind=name(payload.kind),target=id(payload.id),amount=positive(payload.amount_cents),account=id(payload.account_id),paid=date(payload.paid_on);
+   const kind=name(payload.kind),target=id(payload.id),amount=positive(payload.amount_cents),account=id(payload.account_id),paid=date(payload.paid_on);ensureOpen(paid);
    const full=payload.settled===true||payload.settled==='true';
    if(!['occurrence','installment'].includes(kind))throw Error('Tipo de pagamento inválido.');
    if(kind==='occurrence'&&db.prepare('SELECT r.goal_id FROM recurrings r JOIN recurring_occurrences o ON o.recurring_id=r.id WHERE o.id=?').get(target)?.goal_id)throw Error('Confirme este aporte pela operação de metas.');
@@ -240,11 +249,11 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    return {lastInsertRowid:target};
   }
   case 'adjustment': {
-   const amount=integer(payload.amount_cents);if(amount===0)throw Error('Ajuste não pode ser zero.');
+   const amount=integer(payload.amount_cents);ensureOpen(date(payload.adjusted_on));if(amount===0)throw Error('Ajuste não pode ser zero.');
    return run('INSERT INTO balance_adjustments(account_id,amount_cents,adjusted_on,note) VALUES(?,?,?,?)',id(payload.account_id),amount,date(payload.adjusted_on),text(payload.note));
   }
   case 'pay-installment': {
-   const installment=id(payload.id), account=id(payload.account_id);
+   const installment=id(payload.id), account=id(payload.account_id);ensureOpen(date(payload.paid_on));
    const record=db.prepare('SELECT paid_on FROM installments WHERE id=?').get(installment) as {paid_on:string|null}|undefined;
    if(!record)throw Error('Parcela não encontrada.');if(record.paid_on)throw Error('Parcela já paga.');
    return run('UPDATE installments SET paid_on=?,account_id=? WHERE id=? AND paid_on IS NULL',date(payload.paid_on),account,installment);
