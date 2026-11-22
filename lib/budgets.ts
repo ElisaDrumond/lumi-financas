@@ -70,3 +70,58 @@ export function categoryBudgetSummary(data:BudgetData,period:string,account:stri
     percentage:limit>0?spent/limit*100:0,over_limit:spent>limit,status:b.status,movements:entries};
  }).sort((a,b)=>a.category_name.localeCompare(b.category_name,'pt-BR')||a.label_name.localeCompare(b.label_name,'pt-BR'));
 }
+
+/**
+ * Budget commitments already represented in the monthly forecast must not be
+ * added again. Only the uncovered part of each envelope becomes a forecasted
+ * outgoing amount. This is planning, not a transaction or a payable.
+ */
+export function monthlyBudgetImpact(data:BudgetData,period:string,account:string|number=''){
+ const empty={limits_cents:0,covered_cents:0,additional_cents:0};
+ // Envelopes are shared across all financial accounts. We cannot attribute
+ // their remaining amount to a specific bank account without an allocation.
+ if(account!=='')return empty;
+ const active=(data.categoryBudgets??[]).filter(b=>b.status==='active'&&b.start_period<=period);
+ if(!active.length)return empty;
+ const general=new Map<number,number>((data.budgetLabels??[]).filter(l=>String(l.name).toLocaleLowerCase('pt-BR')==='geral').map(l=>[Number(l.category_id),Number(l.id)] as [number,number]));
+ const labels=new Map<number,number>();
+ for(const budget of active)labels.set(Number(budget.label_id),0);
+ const resolve=(category:unknown,label:unknown)=>{
+  if(category==null)return undefined;
+  return label==null?general.get(Number(category)):Number(label);
+ };
+ const cover=(category:unknown,label:unknown,value:number)=>{
+  const id=resolve(category,label);
+  if(id===undefined||!labels.has(id)||!Number.isFinite(value)||value<=0)return;
+  labels.set(id,(labels.get(id)??0)+value);
+ };
+ const occurrencePaid=(id:number)=>data.payments.filter(p=>Number(p.occurrence_id)===id).reduce((s,p)=>s+Number(p.amount_cents),0);
+ const installmentPaid=(id:number)=>data.payments.filter(p=>Number(p.installment_id)===id).reduce((s,p)=>s+Number(p.amount_cents),0);
+ const transactionPaid=(id:number)=>(data.transactionPayments??[]).filter(p=>Number(p.transaction_id)===id).reduce((s,p)=>s+Number(p.amount_cents),0);
+ for(const o of data.occurrences){
+  if(o.period!==period||o.status==='cancelled'||o.type!=='expense'||o.goal_id)continue;
+  const paid=occurrencePaid(Number(o.id));
+  cover(o.category_id,o.budget_label_id,o.status==='paid'&&paid>0?paid:o.amount_cents);
+ }
+ for(const t of data.transactions){
+  if(!t.date.startsWith(period)||t.type!=='expense')continue;
+  const paid=transactionPaid(Number(t.id));
+  cover(t.category_id,t.budget_label_id,t.status==='completed'?(paid||t.actual_cents||t.amount_cents):t.amount_cents);
+ }
+ for(const i of data.installments){
+  if(!i.due_on.startsWith(period))continue;
+  const purchase=(data.purchases??[]).find(p=>Number(p.id)===Number(i.purchase_id));
+  const paid=installmentPaid(Number(i.id));
+  cover(purchase?.category_id,purchase?.budget_label_id,i.paid_on&&paid>0?paid:i.amount_cents);
+ }
+ let limits=0,covered=0,additional=0;
+ for(const b of active){
+  const override=(data.categoryBudgetMonths??[]).find(m=>Number(m.budget_id)===Number(b.id)&&m.period===period);
+  const limit=Number(override?.amount_cents??b.amount_cents);
+  const already=Math.max(0,labels.get(Number(b.label_id))??0);
+  limits+=limit;
+  covered+=Math.min(limit,already);
+  additional+=Math.max(0,limit-already);
+ }
+ return {limits_cents:limits,covered_cents:covered,additional_cents:additional};
+}
