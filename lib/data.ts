@@ -136,6 +136,22 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    return run('INSERT INTO transactions(description,amount_cents,type,date,category_id,account_id,status,actual_cents,completed_on,budget_label_id) VALUES(?,?,?,?,?,?,?,?,?,?)',
     text(payload.description),amount,type,targetDate,cat,id(payload.account_id),status,status==='completed'?amount:null,completedOn,label);
   }
+  case 'transaction-budget-label': {
+   const txId=id(payload.id),row=db.prepare('SELECT category_id,type,date FROM transactions WHERE id=?').get(txId) as {category_id:number|null;type:string;date:string}|undefined;
+   if(!row)throw Error('Transação não encontrada.');
+   ensureOpen(row.date);
+   if(row.type!=='expense'||!row.category_id)throw Error('Somente despesas com categoria podem receber uma subcategoria.');
+   const label=resolveLabel(row.category_id,payload.budget_label_name);
+   return run('UPDATE transactions SET budget_label_id=? WHERE id=?',label,txId);
+  }
+  case 'purchase-budget-label': {
+   const pid=id(payload.id),row=db.prepare('SELECT category_id FROM purchases WHERE id=?').get(pid) as {category_id:number|null}|undefined;
+   if(!row||!row.category_id)throw Error('Compra sem categoria de despesa.');
+   const closed=db.prepare('SELECT 1 FROM installments i JOIN month_closures m ON m.period=substr(i.due_on,1,7) WHERE i.purchase_id=? LIMIT 1').get(pid);
+   if(closed)throw Error('Esta compra possui parcelas em mês fechado. Reabra o fechamento para reclassificar.');
+   const label=resolveLabel(row.category_id,payload.budget_label_name);
+   return run('UPDATE purchases SET budget_label_id=? WHERE id=?',label,pid);
+  }
   case 'transaction-replan': {
    const target=id(payload.id);
    const tx=db.prepare('SELECT id,status,date,completed_on FROM transactions WHERE id=?').get(target) as {id:number;status:string;date:string;completed_on:string|null}|undefined;
