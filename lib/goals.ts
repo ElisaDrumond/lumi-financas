@@ -3,6 +3,7 @@ type Row=Record<string,any>;
 export function goalMovement(entity:string,p:Row){
  const positive=(v:unknown)=>{const n=Number(v);if(!Number.isSafeInteger(n)||n<=0)throw Error('Valor ou identificador inválido.');return n;};
  const date=String(p.moved_on||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||new Date(date+'T12:00:00Z').toISOString().slice(0,10)!==date)throw Error('Data inválida.');
+ if(db.prepare('SELECT 1 FROM month_closures WHERE period=?').get(date.slice(0,7)))throw Error('Mês fechado: reabra o fechamento antes de registrar aportes ou retiradas nessa data.');
  const key=String(p.request_key||'');if(key.length<8||key.length>120)throw Error('Identificador da operação obrigatório.');
  db.exec('BEGIN IMMEDIATE');
  try {
