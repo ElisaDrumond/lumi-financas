@@ -117,7 +117,8 @@ export function planningSummary(data:FinanceData,period:string,account:string|nu
  const balance=accountBalance(data,account);
  return {income:monthly.income,expense:monthly.expense,toReceive,toPay,toGoals,received:cash('income'),spent:cash('expense'),goalOut,balance,openingBalance,reserved:data.goals.reduce((s,g)=>s+g.saved_cents,0),
   carryover,outstandingExpenses,outstandingIncome,wealth:accountBalance(data)+data.goals.reduce((s,g)=>s+g.saved_cents,0),
-  projected:openingBalance+monthly.net};
+  projected:openingBalance+monthly.net,
+  conservativeProjected:openingBalance+monthly.net-outstandingIncome};
 }
 
 /** Planned expense by category for a selected competence month, without counting payments twice. */
