@@ -2,6 +2,7 @@
 import MoneyInput from './MoneyInput';
 import FinancialSummary from './FinancialSummary';
 import MonthClosing from './MonthClosing';
+import MonthlyBudgets from './MonthlyBudgets';
 import ExpenseCategoryChart from './ExpenseCategoryChart';
 import CategoryLabel from './CategoryLabel';
 import MonthPicker from './MonthPicker';
@@ -12,7 +13,7 @@ import {planningSummary,carryoverItems,expenseByCategory,sameAccount,FinanceData
 import {useMemo,useState} from 'react';
 import {Plus,Check,Edit2,Pause,Play,OctagonX,CalendarClock,RefreshCw,ChevronRight} from 'lucide-react';
 type Row=Record<string,any>;
-type Props={data:FinanceData&{accounts:Row[],categories:Row[],recurrings:Row[],occurrences:Row[],payments:Row[],transactions:Row[],installments:Row[],purchases:Row[],monthClosures:Row[],monthClosureAccounts:Row[],monthClosurePending:Row[]},refresh:(period?:string)=>Promise<void>};
+type Props={data:FinanceData&{accounts:Row[],categories:Row[],recurrings:Row[],occurrences:Row[],payments:Row[],transactions:Row[],installments:Row[],purchases:Row[],monthClosures:Row[],monthClosureAccounts:Row[],monthClosurePending:Row[],categoryBudgets:Row[],categoryBudgetMonths:Row[]},refresh:(period?:string)=>Promise<void>};
 const money=(n:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format((n||0)/100);
 const iso=()=>new Date().toLocaleDateString('en-CA');
 const toCents=(v:string)=>Math.round(Number(v.replace(',','.'))*100);
@@ -84,6 +85,7 @@ export default function Planning({data,refresh}:Props){
   <section className="panel glass full">{err&&!dialog&&<p className="error" role="alert">{err}</p>}<div className="panel-header"><div><h3>Planejamento mensal</h3><p>Previsões, pagamentos e recebimentos sem perder o histórico.</p></div><button className="primary-btn" onClick={()=>launch('new')}><Plus size={16}/> Nova recorrência</button></div>
    <div className="planning-toolbar"><label>Mês de referência <MonthPicker value={period} onChange={p=>{setPeriod(p);refresh(p).catch(()=>setErr('Falha ao carregar o mês.'))}}/></label><label>Conta <select aria-label="Filtrar conta" value={account} onChange={e=>setAccount(e.target.value)}><option value="">Todas as contas</option>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><div className="finance-type-filter" role="group" aria-label="Filtrar receitas e despesas do planejamento">{(['all','income','expense'] as const).map(kind=><button key={kind} type="button" aria-pressed={typeFilter===kind} className={typeFilter===kind?'active':''} onClick={()=>setTypeFilter(kind)}>{kind==='all'?'Todos':kind==='income'?'Receitas':'Despesas'}</button>)}</div><span className="pill">{items.length} ocorrências neste mês</span></div>
    <FinancialSummary summary={sums}/>
+   <MonthlyBudgets data={data} period={period} account={account} refresh={refresh}/>
    <MonthClosing period={period} refresh={refresh} closures={data.monthClosures||[]} closureAccounts={data.monthClosureAccounts||[]} closurePending={data.monthClosurePending||[]}/>
    <ExpenseCategoryChart items={expenseChart} period={period}/>
    <details className="planning-fold" open>
