@@ -152,6 +152,8 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    if(!['income','expense'].includes(type)||!['fixed','variable'].includes(behavior))throw Error('Tipo ou comportamento inválido.');
    if(current.goal_id&&type!=='expense')throw Error('Aportes de metas precisam ser despesas.');
    const start=recurringStart(payload.start_on),end=payload.end_on?date(payload.end_on):null;
+   const closed=db.prepare('SELECT MAX(period) AS period FROM month_closures').get() as {period:string|null};
+   if(closed.period&&db.prepare('SELECT 1 FROM recurring_occurrences WHERE recurring_id=? AND period<=? LIMIT 1').get(rid,closed.period))throw Error('Há ocorrências deste cadastro em mês fechado. Reabra o fechamento para alterar o histórico.');
    if(end&&end<start)throw Error('A data final deve ser posterior à inicial.');
    const day=integer(payload.due_day);
    if(day<1||day>31)throw Error('Dia de vencimento inválido.');
@@ -202,6 +204,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const amount=positive(payload.amount_cents);
    const payments=db.prepare('SELECT COALESCE(SUM(amount_cents),0) AS total FROM payment_records WHERE occurrence_id=?').get(oid) as {total:number};
    if(amount<payments.total)throw Error('O valor não pode ser menor que o total já pago.');
+   ensureOpen(date(payload.due_on));
    return run('UPDATE recurring_occurrences SET amount_cents=?,due_on=?,customized=1 WHERE id=?',amount,date(payload.due_on),oid);
   }
   case 'occurrence-cancel': {
@@ -265,5 +268,13 @@ export function removeDb(entity:string,idValue:number){
  if(!['transactions','goals','categories','cards','purchases','accounts','recurrings'].includes(entity))throw Error('Tipo inválido.');
  if(!Number.isSafeInteger(idValue)||idValue<=0)throw Error('ID inválido.');
  if(entity==='transactions'&&db.prepare('SELECT 1 FROM transaction_payments WHERE transaction_id=? LIMIT 1').get(idValue))throw Error('Lançamento possui pagamentos; preserve o histórico financeiro.');
+ const closed=(period:string)=>db.prepare('SELECT 1 FROM month_closures WHERE period=?').get(period);
+ if(entity==='transactions'){
+  const row=db.prepare('SELECT date,completed_on FROM transactions WHERE id=?').get(idValue) as {date:string;completed_on:string|null}|undefined;
+  if(row&&(closed(row.date.slice(0,7))||row.completed_on&&closed(row.completed_on.slice(0,7))))throw Error('Lançamento de mês fechado. Reabra antes de excluir.');
+ }
+ if(entity==='purchases'&&db.prepare('SELECT 1 FROM installments i JOIN month_closures m ON m.period=substr(i.due_on,1,7) WHERE i.purchase_id=? LIMIT 1').get(idValue))throw Error('Compra possui parcelas em mês fechado.');
+ if(entity==='recurrings'&&db.prepare('SELECT 1 FROM recurring_occurrences o JOIN month_closures m ON m.period=o.period WHERE o.recurring_id=? LIMIT 1').get(idValue))throw Error('Recorrência possui histórico em mês fechado.');
+
  return db.prepare(`DELETE FROM ${entity} WHERE id=?`).run(idValue);
 }
