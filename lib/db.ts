@@ -135,3 +135,29 @@ db.exec(`CREATE TABLE IF NOT EXISTS transaction_payments (
 );
 CREATE INDEX IF NOT EXISTS idx_transaction_payments_tx ON transaction_payments(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_transaction_payments_date ON transaction_payments(paid_on);`);
+
+/** Month-end reconciliation snapshots. Additive only; original ledger stays untouched. */
+db.exec(`CREATE TABLE IF NOT EXISTS month_closures (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ period TEXT NOT NULL UNIQUE,
+ closed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ notes TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS month_closure_accounts (
+ closure_id INTEGER NOT NULL REFERENCES month_closures(id) ON DELETE CASCADE,
+ account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+ reconciled_cents INTEGER NOT NULL,
+ calculated_cents INTEGER NOT NULL,
+ PRIMARY KEY(closure_id,account_id)
+);
+CREATE TABLE IF NOT EXISTS month_closure_pending (
+ closure_id INTEGER NOT NULL REFERENCES month_closures(id) ON DELETE CASCADE,
+ kind TEXT NOT NULL CHECK(kind IN ('occurrence','transaction','installment')),
+ record_id INTEGER NOT NULL,
+ type TEXT NOT NULL CHECK(type IN ('income','expense')),
+ description TEXT NOT NULL,
+ due_on TEXT NOT NULL,
+ remaining_cents INTEGER NOT NULL CHECK(remaining_cents > 0),
+ PRIMARY KEY(closure_id,kind,record_id)
+);
+CREATE INDEX IF NOT EXISTS idx_month_closure_pending_period ON month_closure_pending(closure_id);`);
