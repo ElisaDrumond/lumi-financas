@@ -7,7 +7,7 @@ import {useConfirm} from './ConfirmDialog';
 type Account={id:number;name:string;calculated_cents:number;reconciled_cents:number};
 type Pending={kind:'occurrence'|'transaction'|'installment';id:number;type:string;description:string;due_on:string;remaining_cents:number};
 type Preview={period:string;end:string;accounts:Account[];pending:Pending[];flow:{received:number;spent:number};existing:{id:number;notes:string;closed_at:string}|null;total_calculated_cents:number;pending_income_cents:number;pending_expense_cents:number;canClose:boolean};
-type Closure={id:number;period:string;notes:string;closed_at:string;received_cents:number;spent_cents:number};
+type Closure=Record<string,any>;
 type Props={period:string;refresh:(period?:string)=>Promise<void>;closures:Closure[];closureAccounts:Record<string,any>[];closurePending:Record<string,any>[]};
 const money=(n:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n/100);
 const parse=(v:string)=>v.trim()===''?Number.NaN:Math.round(Number(v.replace(',','.'))*100);
