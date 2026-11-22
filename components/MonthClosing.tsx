@@ -7,7 +7,7 @@ import {useConfirm} from './ConfirmDialog';
 type Account={id:number;name:string;calculated_cents:number;reconciled_cents:number};
 type Pending={kind:'occurrence'|'transaction'|'installment';id:number;type:string;description:string;due_on:string;remaining_cents:number};
 type Preview={period:string;end:string;accounts:Account[];pending:Pending[];flow:{received:number;spent:number};existing:{id:number;notes:string;closed_at:string}|null;total_calculated_cents:number;pending_income_cents:number;pending_expense_cents:number;canClose:boolean};
-type Closure={id:number;period:string;notes:string;closed_at:string};
+type Closure={id:number;period:string;notes:string;closed_at:string;received_cents:number;spent_cents:number};
 type Props={period:string;refresh:(period?:string)=>Promise<void>;closures:Closure[];closureAccounts:Record<string,any>[];closurePending:Record<string,any>[]};
 const money=(n:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n/100);
 const parse=(v:string)=>v.trim()===''?Number.NaN:Math.round(Number(v.replace(',','.'))*100);
@@ -72,9 +72,9 @@ export default function MonthClosing({period,refresh,closures,closureAccounts,cl
   {expanded&&<div className="month-close-body">
    {error&&<p className="error" role="alert">{error}</p>}
    {existing?<><div className="month-close-state"><LockKeyhole size={17}/><strong>Fechado em {new Date(existing.closed_at.replace(' ','T')+'Z').toLocaleDateString('pt-BR')}</strong></div>
-    <p className="month-close-hint">Saldos conciliados registrados para {period.slice(5)}/{period.slice(0,4)}. O próximo mês parte destes valores.</p>
+    <p className="month-close-hint">Saldos conciliados registrados para {period.slice(5)}/{period.slice(0,4)}. O próximo mês parte destes valores.</p><div className="month-close-metrics"><div><small>Receitas realizadas</small><strong>{money(existing.received_cents||0)}</strong></div><div><small>Despesas pagas</small><strong>{money(existing.spent_cents||0)}</strong></div><div><small>Despesas pendentes no fechamento</small><strong>{money(pending.filter(p=>p.type==='expense').reduce((s,p)=>s+p.remaining_cents,0))}</strong></div><div><small>Receitas pendentes no fechamento</small><strong>{money(pending.filter(p=>p.type==='income').reduce((s,p)=>s+p.remaining_cents,0))}</strong></div></div>
     <div className="month-close-accounts">{accounts.map(a=><div key={a.account_id} className="month-close-account"><strong>{a.account_name||'Conta '+a.account_id}</strong><span>{money(a.reconciled_cents)}<small>Conferido · diferença de {money(a.reconciled_cents-a.calculated_cents)}</small></span></div>)}</div>
-    <p className="month-close-hint">{pending.length} pendência(s) registradas no fechamento. A lista abaixo é histórica; os itens continuam acompanhados pelos lançamentos originais.</p>
+    <p className="month-close-hint">{pending.length} pendência(s) registradas no fechamento. A lista abaixo é histórica; os itens continuam acompanhados pelos lançamentos originais.</p>{pending.length>0&&<div className="month-close-pendings">{pending.map(p=><div className="month-close-pending" key={p.kind+'-'+p.record_id}><div><strong>{p.description}</strong><small>{p.type==='income'?'A receber':'A pagar'} · {new Date(p.due_on+'T12:00:00').toLocaleDateString('pt-BR')} · Pendente na data: {money(p.remaining_cents)}</small></div></div>)}</div>}
     {existing.notes&&<p className="month-close-hint">Observações: {existing.notes}</p>}
     <button className="small-btn" type="button" onClick={reopen} disabled={saving}><UnlockKeyhole size={15}/> Reabrir mês</button>
    </>:loading||!preview?<p className="month-close-hint"><RefreshCw size={15}/> Carregando conferência...</p>:<>

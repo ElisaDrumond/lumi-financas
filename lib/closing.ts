@@ -17,7 +17,7 @@ function unresolved(data:Ledger,period:string):Pending[]{
  for(const o of data.occurrences){
   if(o.due_on>end||o.status==='cancelled')continue;
   const records=data.payments.filter(p=>p.occurrence_id===o.id&&p.paid_on<=end);
-  if(records.some(p=>p.settled))continue;
+  if(records.some(p=>p.settled)||o.goal_id&&data.goalMovements.some(m=>m.occurrence_id===o.id&&m.moved_on<=end))continue;
   const paid=records.reduce((s,p)=>s+p.amount_cents,0);
   const remaining=Math.max(0,o.amount_cents-paid);
   if(remaining)entries.push({kind:'occurrence',id:o.id,type:o.type,description:o.description,due_on:o.due_on,remaining_cents:remaining});
@@ -81,7 +81,7 @@ export function closeMonth(payload:Record<string,unknown>){
  db.exec('BEGIN IMMEDIATE');
  try {
   if(db.prepare('SELECT 1 FROM month_closures WHERE period=?').get(period))throw Error('Mês já fechado.');
-  const result=db.prepare('INSERT INTO month_closures(period,notes) VALUES(?,?)').run(period,note);
+  const result=db.prepare('INSERT INTO month_closures(period,notes,received_cents,spent_cents) VALUES(?,?,?,?)').run(period,note,preview.flow.received,preview.flow.spent);
   const closureId=Number(result.lastInsertRowid);
   const insertAccount=db.prepare('INSERT INTO month_closure_accounts(closure_id,account_id,reconciled_cents,calculated_cents) VALUES(?,?,?,?)');
   for(const a of submitted)insertAccount.run(closureId,a.account_id,a.reconciled_cents,a.calculated_cents);

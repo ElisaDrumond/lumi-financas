@@ -141,7 +141,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS month_closures (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
  period TEXT NOT NULL UNIQUE,
  closed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
- notes TEXT NOT NULL DEFAULT ''
+ notes TEXT NOT NULL DEFAULT '',
+ received_cents INTEGER NOT NULL DEFAULT 0,
+ spent_cents INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS month_closure_accounts (
  closure_id INTEGER NOT NULL REFERENCES month_closures(id) ON DELETE CASCADE,
@@ -161,3 +163,9 @@ CREATE TABLE IF NOT EXISTS month_closure_pending (
  PRIMARY KEY(closure_id,kind,record_id)
 );
 CREATE INDEX IF NOT EXISTS idx_month_closure_pending_period ON month_closure_pending(closure_id);`);
+
+/* Backfill added snapshot totals if the closing table was created by an earlier patch. */
+for(const [column] of [['received_cents'],['spent_cents']] as const){
+ const columns=db.prepare('PRAGMA table_info(month_closures)').all() as {name:string}[];
+ if(!columns.some(c=>c.name===column))db.exec(`ALTER TABLE month_closures ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
+}
