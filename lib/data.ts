@@ -23,8 +23,9 @@ export function readAll(period?:string) {
   monthClosures: query('SELECT * FROM month_closures ORDER BY period DESC'),
   monthClosureAccounts: query('SELECT ca.*,a.name AS account_name FROM month_closure_accounts ca JOIN accounts a ON a.id=ca.account_id ORDER BY ca.closure_id,ca.account_id'),
   monthClosurePending: query('SELECT * FROM month_closure_pending ORDER BY closure_id,due_on'),
-  categoryBudgets: query("SELECT b.*,c.name AS category_name,c.color AS category_color FROM category_budgets b JOIN categories c ON c.id=b.category_id ORDER BY c.name"),
-  categoryBudgetMonths: query('SELECT * FROM category_budget_months ORDER BY period DESC'),
+  budgetLabels: query('SELECT l.*,c.name AS category_name FROM budget_labels l JOIN categories c ON c.id=l.category_id ORDER BY c.name,l.name'),
+  categoryBudgets: query("SELECT b.*,l.category_id,l.name AS label_name,c.name AS category_name,c.color AS category_color FROM budget_envelopes b JOIN budget_labels l ON l.id=b.label_id JOIN categories c ON c.id=l.category_id ORDER BY c.name,l.name"),
+  categoryBudgetMonths: query('SELECT * FROM budget_envelope_months ORDER BY period DESC'),
  };
 }
 export function updateDb(entity: string, payload: Record<string,unknown>) {
@@ -41,36 +42,60 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
  };
  const text = (v:unknown) => {const s=name(v);if(!s||s.length>120)throw Error('Preencha o nome ou descrição (até 120 caracteres).');return s;};
  const run=(sql:string,...args:(string|number|null)[])=>db.prepare(sql).run(...args);
+ const resolveLabel=(categoryId:number|null,labelValue:unknown)=>{
+  const value=name(labelValue);
+  if(!value)return null;
+  if(!categoryId)throw Error('Escolha a categoria antes da subcategoria.');
+  const label=text(value);
+  const category=db.prepare("SELECT type FROM categories WHERE id=?").get(categoryId) as {type:string}|undefined;
+  if(category?.type!=='expense')throw Error('Subcategorias de orçamento exigem uma categoria de despesa.');
+  run('INSERT OR IGNORE INTO budget_labels(category_id,name) VALUES(?,?)',categoryId,label);
+  const row=db.prepare('SELECT id FROM budget_labels WHERE category_id=? AND name=?').get(categoryId,label) as {id:number};
+  return row.id;
+ };
  const budgetPeriod=(v:unknown)=>{const s=name(v);if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(s))throw Error('Mês do orçamento inválido.');return s;};
  switch(entity){
+  case 'budget-label-save': {
+   const categoryId=id(payload.category_id),label=text(payload.label_name);
+   const c=db.prepare("SELECT id FROM categories WHERE id=? AND type='expense'").get(categoryId);
+   if(!c)throw Error('Selecione uma categoria de despesa válida.');
+   run('INSERT OR IGNORE INTO budget_labels(category_id,name) VALUES(?,?)',categoryId,label);
+   return db.prepare('SELECT id AS lastInsertRowid FROM budget_labels WHERE category_id=? AND name=?').get(categoryId,label) as {lastInsertRowid:number};
+  }
   case 'category-budget-save': {
    const categoryId=id(payload.category_id),amount=positive(payload.amount_cents),period=budgetPeriod(payload.start_period);
-   const category=db.prepare("SELECT type FROM categories WHERE id=?").get(categoryId) as {type:string}|undefined;
-   if(category?.type!=='expense')throw Error('Orçamentos só podem ser vinculados a categorias de despesas.');
-   const existing=db.prepare('SELECT id FROM category_budgets WHERE category_id=?').get(categoryId) as {id:number}|undefined;
-   if(existing)throw Error('Já existe um orçamento para esta categoria. Use a edição.');
-   return run("INSERT INTO category_budgets(category_id,amount_cents,start_period) VALUES(?,?,?)",categoryId,amount,period);
+   const c=db.prepare("SELECT id FROM categories WHERE id=? AND type='expense'").get(categoryId);
+   if(!c)throw Error('Orçamentos só podem ser vinculados a categorias de despesas.');
+   const label=text(payload.label_name||'Geral');
+   db.exec('BEGIN IMMEDIATE');
+   try{
+    run('INSERT OR IGNORE INTO budget_labels(category_id,name) VALUES(?,?)',categoryId,label);
+    const found=db.prepare('SELECT id FROM budget_labels WHERE category_id=? AND name=?').get(categoryId,label) as {id:number};
+    if(db.prepare('SELECT 1 FROM budget_envelopes WHERE label_id=?').get(found.id))throw Error('Já existe um orçamento com essa subcategoria. Use a edição.');
+    const result=run("INSERT INTO budget_envelopes(label_id,amount_cents,start_period) VALUES(?,?,?)",found.id,amount,period);
+    db.exec('COMMIT');return result;
+   }catch(e){db.exec('ROLLBACK');throw e;}
   }
   case 'category-budget-edit': {
    const budgetId=id(payload.id),amount=positive(payload.amount_cents);
-   const existing=db.prepare('SELECT id FROM category_budgets WHERE id=?').get(budgetId);
+   const existing=db.prepare('SELECT id FROM budget_envelopes WHERE id=?').get(budgetId);
    if(!existing)throw Error('Orçamento não encontrado.');
    const scope=name(payload.scope);
    if(scope==='month'){
     const period=budgetPeriod(payload.period);
-    return run("INSERT INTO category_budget_months(budget_id,period,amount_cents) VALUES(?,?,?) ON CONFLICT(budget_id,period) DO UPDATE SET amount_cents=excluded.amount_cents",budgetId,period,amount);
+    return run("INSERT INTO budget_envelope_months(budget_id,period,amount_cents) VALUES(?,?,?) ON CONFLICT(budget_id,period) DO UPDATE SET amount_cents=excluded.amount_cents",budgetId,period,amount);
    }
-   if(scope==='default')return run('UPDATE category_budgets SET amount_cents=? WHERE id=?',amount,budgetId);
+   if(scope==='default')return run('UPDATE budget_envelopes SET amount_cents=? WHERE id=?',amount,budgetId);
    throw Error('Tipo de edição inválido.');
   }
   case 'category-budget-status': {
    const budgetId=id(payload.id),status=name(payload.status);
    if(!['active','paused'].includes(status))throw Error('Situação inválida.');
-   return run('UPDATE category_budgets SET status=? WHERE id=?',status,budgetId);
+   return run('UPDATE budget_envelopes SET status=? WHERE id=?',status,budgetId);
   }
   case 'category-budget-remove': {
    const budgetId=id(payload.id);
-   return run('DELETE FROM category_budgets WHERE id=?',budgetId);
+   return run('DELETE FROM budget_envelopes WHERE id=?',budgetId);
   }
   case 'accounts': return run('INSERT INTO accounts(name,type,initial_balance,color) VALUES(?,?,?,?)',text(payload.name),name(payload.type)||'checking',integer(payload.initial_balance??0),name(payload.color)||'#9a8cf5');
   case 'categories': {const type=name(payload.type);if(!['income','expense'].includes(type)) throw Error('Tipo inválido.');return run('INSERT INTO categories(name,type,icon,color) VALUES(?,?,?,?)',text(payload.name),type,'tag',name(payload.color)||'#a48bf5');}
@@ -107,8 +132,9 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const targetDate=date(payload.date);ensureOpen(targetDate);
    const completedOn=status==='completed'?date(payload.completed_on||targetDate):null;
    const amount=positive(payload.amount_cents);
-   return run('INSERT INTO transactions(description,amount_cents,type,date,category_id,account_id,status,actual_cents,completed_on) VALUES(?,?,?,?,?,?,?,?,?)',
-    text(payload.description),amount,type,targetDate,cat,id(payload.account_id),status,status==='completed'?amount:null,completedOn);
+   const label=resolveLabel(cat,payload.budget_label_name);
+   return run('INSERT INTO transactions(description,amount_cents,type,date,category_id,account_id,status,actual_cents,completed_on,budget_label_id) VALUES(?,?,?,?,?,?,?,?,?,?)',
+    text(payload.description),amount,type,targetDate,cat,id(payload.account_id),status,status==='completed'?amount:null,completedOn,label);
   }
   case 'transaction-replan': {
    const target=id(payload.id);
@@ -149,7 +175,8 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const due=new Date(first+'T12:00:00Z');const dueDay=due.getUTCDate();
    db.exec('BEGIN IMMEDIATE');
    try{
-    const result=run('INSERT INTO purchases(description,total_cents,installments_count,method,card_id,category_id,purchased_on,first_due_on) VALUES(?,?,?,?,?,?,?,?)',text(payload.description),total,count,method,card,id(payload.category_id,false),purchased,first);
+    const category=id(payload.category_id,false),label=resolveLabel(category,payload.budget_label_name);
+    const result=run('INSERT INTO purchases(description,total_cents,installments_count,method,card_id,category_id,purchased_on,first_due_on,budget_label_id) VALUES(?,?,?,?,?,?,?,?,?)',text(payload.description),total,count,method,card,category,purchased,first,label);
     const purchaseId=Number(result.lastInsertRowid);
     const base=Math.floor(total/count),rest=total%count;
     for(let i=0;i<count;i++){
