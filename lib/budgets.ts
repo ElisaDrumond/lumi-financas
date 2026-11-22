@@ -19,7 +19,7 @@ export function categoryBudgetSummary(data:BudgetData,period:string,account:stri
  const installments=new Map(data.installments.map(i=>[Number(i.id),i]));
  const accountsForInstallment=(i:Row)=>i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??null;
  const movements=new Map<number,BudgetMovement[]>();
- const general=new Map<number,number>((data.budgetLabels??[]).filter(l=>String(l.name).toLocaleLowerCase('pt-BR')==='geral').map(l=>[Number(l.category_id),Number(l.id)]));
+ const general=new Map<number,number>((data.budgetLabels??[]).filter(l=>String(l.name).toLocaleLowerCase('pt-BR')==='geral').map(l=>[Number(l.category_id),Number(l.id)] as [number,number]));
 
  const add=(category:unknown,label:unknown,id:string,description:string,date:string,value:number)=>{
   if(category==null||!date.startsWith(period)||!Number.isFinite(value)||value<=0)return;
