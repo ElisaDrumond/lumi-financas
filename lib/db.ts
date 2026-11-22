@@ -231,3 +231,16 @@ if(!db.prepare("SELECT 1 FROM budget_label_migrations WHERE name='category-budge
   db.exec('COMMIT');
  }catch(e){db.exec('ROLLBACK');throw e;}
 }
+
+/** Immutable budget performance captured when a month is reconciled. */
+db.exec(`CREATE TABLE IF NOT EXISTS month_closure_budgets (
+ closure_id INTEGER NOT NULL REFERENCES month_closures(id) ON DELETE CASCADE,
+ budget_id INTEGER,
+ category_name TEXT NOT NULL,
+ label_name TEXT NOT NULL,
+ limit_cents INTEGER NOT NULL,
+ spent_cents INTEGER NOT NULL,
+ unused_cents INTEGER NOT NULL,
+ exceeded_cents INTEGER NOT NULL,
+ PRIMARY KEY(closure_id,category_name,label_name)
+);`);

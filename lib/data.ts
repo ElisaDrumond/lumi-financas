@@ -23,6 +23,7 @@ export function readAll(period?:string) {
   monthClosures: query('SELECT * FROM month_closures ORDER BY period DESC'),
   monthClosureAccounts: query('SELECT ca.*,a.name AS account_name FROM month_closure_accounts ca JOIN accounts a ON a.id=ca.account_id ORDER BY ca.closure_id,ca.account_id'),
   monthClosurePending: query('SELECT * FROM month_closure_pending ORDER BY closure_id,due_on'),
+  monthClosureBudgets: query('SELECT * FROM month_closure_budgets ORDER BY closure_id,category_name,label_name'),
   budgetLabels: query('SELECT l.*,c.name AS category_name FROM budget_labels l JOIN categories c ON c.id=l.category_id ORDER BY c.name,l.name'),
   categoryBudgets: query("SELECT b.*,l.category_id,l.name AS label_name,c.name AS category_name,c.color AS category_color FROM budget_envelopes b JOIN budget_labels l ON l.id=b.label_id JOIN categories c ON c.id=l.category_id ORDER BY c.name,l.name"),
   categoryBudgetMonths: query('SELECT * FROM budget_envelope_months ORDER BY period DESC'),
