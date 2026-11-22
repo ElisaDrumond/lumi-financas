@@ -85,7 +85,7 @@ export default function Planning({data,refresh}:Props){
   <section className="panel glass full">{err&&!dialog&&<p className="error" role="alert">{err}</p>}<div className="panel-header"><div><h3>Planejamento mensal</h3><p>Previsões, pagamentos e recebimentos sem perder o histórico.</p></div><button className="primary-btn" onClick={()=>launch('new')}><Plus size={16}/> Nova recorrência</button></div>
    <div className="planning-toolbar"><label>Mês de referência <MonthPicker value={period} onChange={p=>{setPeriod(p);refresh(p).catch(()=>setErr('Falha ao carregar o mês.'))}}/></label><label>Conta <select aria-label="Filtrar conta" value={account} onChange={e=>setAccount(e.target.value)}><option value="">Todas as contas</option>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><div className="finance-type-filter" role="group" aria-label="Filtrar receitas e despesas do planejamento">{(['all','income','expense'] as const).map(kind=><button key={kind} type="button" aria-pressed={typeFilter===kind} className={typeFilter===kind?'active':''} onClick={()=>setTypeFilter(kind)}>{kind==='all'?'Todos':kind==='income'?'Receitas':'Despesas'}</button>)}</div><span className="pill">{items.length} ocorrências neste mês</span></div>
    <FinancialSummary summary={sums}/>
-   <MonthlyBudgets data={data} period={period} account={account} refresh={refresh}/>
+   <MonthlyBudgets data={data} period={period} account="" refresh={refresh}/>
    <MonthClosing period={period} refresh={refresh} closures={data.monthClosures||[]} closureAccounts={data.monthClosureAccounts||[]} closurePending={data.monthClosurePending||[]}/>
    <ExpenseCategoryChart items={expenseChart} period={period}/>
    <details className="planning-fold" open>

@@ -405,6 +405,8 @@ test('orçamento mensal por categoria contabiliza apenas pagamentos reais e aler
  const budget=add('category-budget-save',{category_id:cat,amount_cents:15000,start_period:month});
  let data=readAll(month);
  assert.equal(accountBalance(data,a),original);
+ const beforeBudgetProjection=planningSummary(data,month,a).projected;
+ assert.equal(planningSummary(readAll(month),month,a).projected,beforeBudgetProjection);
  let summary=categoryBudgetSummary(data,month,a).find(b=>b.id===budget);
  assert.equal(summary.spent_cents,0);
  assert.equal(summary.remaining_cents,15000);

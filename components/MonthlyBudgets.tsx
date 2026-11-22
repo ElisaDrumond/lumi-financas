@@ -15,7 +15,7 @@ export default function MonthlyBudgets({data,period,account,refresh}:Props){
  const [amount,setAmount]=useState('');
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
- const [expanded,setExpanded]=useState(false);
+ const [expanded,setExpanded]=useState(true);
  const summary=useMemo(()=>categoryBudgetSummary(data,period,account),[data,period,account]);
  const activeIds=new Set((data.categoryBudgets??[]).map(b=>Number(b.category_id)));
  const choices=(data.categories??[]).filter(c=>c.type==='expense'&&!activeIds.has(Number(c.id)));
@@ -58,7 +58,7 @@ export default function MonthlyBudgets({data,period,account,refresh}:Props){
   </div>
   {expanded&&<div className="monthly-budgets-body">
    {error&&<p className="error" role="alert">{error}</p>}
-   <p className="month-close-hint">Cada limite vale por mês desde o mês inicial. As despesas são contadas quando são pagas, inclusive pagamentos parciais, e o orçamento não cria lançamentos no saldo.</p>
+   <p className="month-close-hint">Cada limite vale por mês desde o mês inicial. Os gastos realizados somam todas as contas, mesmo quando o Planejamento está filtrado por uma conta. Pagamentos parciais são contabilizados pelo valor pago. O limite não cria despesas nem altera o saldo.</p>
    {editing&&<form className="monthly-budget-form" onSubmit={save}>
     <div className="monthly-budget-form-fields">
      {editing==='create'?<label>Categoria<select required value={categoryId} onChange={e=>setCategoryId(e.target.value)}><option value="">Selecione</option>{choices.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>:<div className="monthly-budget-form-label"><strong>{current?.category_name||'Orçamento'}</strong><small>{editing==='month'? 'Alterar somente '+period.slice(5)+'/'+period.slice(0,4):'Alterar valor padrão dos próximos meses (sem substituir ajustes mensais)'}</small></div>}
