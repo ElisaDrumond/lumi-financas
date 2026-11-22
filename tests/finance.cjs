@@ -481,6 +481,14 @@ test('subcategorias reutilizáveis separam múltiplos orçamentos na mesma categ
  data=readAll(month);
  assert.equal(categoryBudgetSummary(data,month,acc).find(b=>b.id===horti).spent_cents,16000);
  assert.equal(categoryBudgetSummary(data,month,acc).find(b=>b.id===market).spent_cents,15000);
+ const recurring=add('recurrings',{...definition(acc,{description:'Entrega hortifruti recorrente',start_on:month+'-01',amount_cents:4000,category_id:category}),budget_label_name:'Hortifruti'});
+ data=readAll(month);
+ const occ=data.occurrences.find(o=>o.recurring_id===recurring&&o.period===month);
+ assert.equal(occ.budget_label_id,data.budgetLabels.find(l=>l.category_id===category&&l.name==='Hortifruti').id);
+ add('record-payment',{kind:'occurrence',id:occ.id,amount_cents:1000,account_id:acc,paid_on:month+'-14',settled:false});
+ data=readAll(month);
+ assert.equal(categoryBudgetSummary(data,month,acc).find(b=>b.id===horti).spent_cents,17000);
+ assert.equal(categoryBudgetSummary(data,month,acc).find(b=>b.id===market).spent_cents,15000);
  assert.equal(data.transactions.find(t=>t.id===fruit).category_id,category);
  assert.equal(data.transactions.find(t=>t.id===food).category_id,category);
  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
