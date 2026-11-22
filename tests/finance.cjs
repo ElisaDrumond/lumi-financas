@@ -363,7 +363,11 @@ test('fechamento concilia saldo real, preserva pendências e transporta pagament
  const accounts=preview.accounts.map(x=>({account_id:x.id,reconciled_cents:x.id===a?5000:x.calculated_cents,expected_calculated_cents:x.calculated_cents}));
  assert.throws(()=>closeMonth({period:nov,accounts}),/diferença/i);
  closeMonth({period:nov,accounts,confirm_differences:true,notes:'Conferido pelo extrato'});
+ assert.throws(()=>add('transactions',{description:'Nova despesa retroativa',type:'expense',date:nov+'-19',amount_cents:500,account_id:a,status:'completed'}),/fechado/i);
+ assert.throws(()=>add('transaction-payment',{id:expense,amount_cents:100,account_id:a,paid_on:nov+'-20',settled:false}),/fechado/i);
  assert.equal(readAll(jan).monthClosures.find(c=>c.period===nov).notes,'Conferido pelo extrato');
+ assert.equal(readAll(jan).monthClosures.find(c=>c.period===nov).received_cents,0);
+ assert.equal(readAll(jan).monthClosures.find(c=>c.period===nov).spent_cents,0);
  assert.equal(readAll(jan).monthClosurePending.filter(x=>x.type==='income'&&x.description==='13º não recebido').length,1);
  assert.equal(accountBalance(readAll(jan),a),0);
  assert.equal(planningSummary(readAll(dez),dez,a).openingBalance,5000);
@@ -384,6 +388,7 @@ test('fechamento concilia saldo real, preserva pendências e transporta pagament
  assert.ok(!state.monthClosurePending.some(x=>x.description==='Condomínio não pago'&&x.closure_id!==state.monthClosures.find(x=>x.period===nov).id));
  const december=closingPreview(dez);
  closeMonth({period:dez,accounts:december.accounts.map(x=>({account_id:x.id,reconciled_cents:x.calculated_cents,expected_calculated_cents:x.calculated_cents}))});
+ assert.equal(readAll(jan).monthClosures.find(c=>c.period===dez).spent_cents,10000);
  assert.throws(()=>reopenMonth(nov),/mais recentes/);
  reopenMonth(dez);
  reopenMonth(nov);
