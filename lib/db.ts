@@ -169,3 +169,19 @@ for(const [column] of [['received_cents'],['spent_cents']] as const){
  const columns=db.prepare('PRAGMA table_info(month_closures)').all() as {name:string}[];
  if(!columns.some(c=>c.name===column))db.exec(`ALTER TABLE month_closures ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
 }
+
+/** Monthly category spending envelopes. These are targets, never ledger movements. */
+db.exec(`CREATE TABLE IF NOT EXISTS category_budgets (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ category_id INTEGER NOT NULL UNIQUE REFERENCES categories(id) ON DELETE CASCADE,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents>0),
+ start_period TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused')),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS category_budget_months (
+ budget_id INTEGER NOT NULL REFERENCES category_budgets(id) ON DELETE CASCADE,
+ period TEXT NOT NULL,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents>0),
+ PRIMARY KEY(budget_id,period)
+);`);

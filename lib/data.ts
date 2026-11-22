@@ -23,6 +23,8 @@ export function readAll(period?:string) {
   monthClosures: query('SELECT * FROM month_closures ORDER BY period DESC'),
   monthClosureAccounts: query('SELECT ca.*,a.name AS account_name FROM month_closure_accounts ca JOIN accounts a ON a.id=ca.account_id ORDER BY ca.closure_id,ca.account_id'),
   monthClosurePending: query('SELECT * FROM month_closure_pending ORDER BY closure_id,due_on'),
+  categoryBudgets: query("SELECT b.*,c.name AS category_name,c.color AS category_color FROM category_budgets b JOIN categories c ON c.id=b.category_id ORDER BY c.name"),
+  categoryBudgetMonths: query('SELECT * FROM category_budget_months ORDER BY period DESC'),
  };
 }
 export function updateDb(entity: string, payload: Record<string,unknown>) {
@@ -39,7 +41,37 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
  };
  const text = (v:unknown) => {const s=name(v);if(!s||s.length>120)throw Error('Preencha o nome ou descrição (até 120 caracteres).');return s;};
  const run=(sql:string,...args:(string|number|null)[])=>db.prepare(sql).run(...args);
+ const budgetPeriod=(v:unknown)=>{const s=name(v);if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(s))throw Error('Mês do orçamento inválido.');return s;};
  switch(entity){
+  case 'category-budget-save': {
+   const categoryId=id(payload.category_id),amount=positive(payload.amount_cents),period=budgetPeriod(payload.start_period);
+   const category=db.prepare("SELECT type FROM categories WHERE id=?").get(categoryId) as {type:string}|undefined;
+   if(category?.type!=='expense')throw Error('Orçamentos só podem ser vinculados a categorias de despesas.');
+   const existing=db.prepare('SELECT id FROM category_budgets WHERE category_id=?').get(categoryId) as {id:number}|undefined;
+   if(existing)throw Error('Já existe um orçamento para esta categoria. Use a edição.');
+   return run("INSERT INTO category_budgets(category_id,amount_cents,start_period) VALUES(?,?,?)",categoryId,amount,period);
+  }
+  case 'category-budget-edit': {
+   const budgetId=id(payload.id),amount=positive(payload.amount_cents);
+   const existing=db.prepare('SELECT id FROM category_budgets WHERE id=?').get(budgetId);
+   if(!existing)throw Error('Orçamento não encontrado.');
+   const scope=name(payload.scope);
+   if(scope==='month'){
+    const period=budgetPeriod(payload.period);
+    return run("INSERT INTO category_budget_months(budget_id,period,amount_cents) VALUES(?,?,?) ON CONFLICT(budget_id,period) DO UPDATE SET amount_cents=excluded.amount_cents",budgetId,period,amount);
+   }
+   if(scope==='default')return run('UPDATE category_budgets SET amount_cents=? WHERE id=?',amount,budgetId);
+   throw Error('Tipo de edição inválido.');
+  }
+  case 'category-budget-status': {
+   const budgetId=id(payload.id),status=name(payload.status);
+   if(!['active','paused'].includes(status))throw Error('Situação inválida.');
+   return run('UPDATE category_budgets SET status=? WHERE id=?',status,budgetId);
+  }
+  case 'category-budget-remove': {
+   const budgetId=id(payload.id);
+   return run('DELETE FROM category_budgets WHERE id=?',budgetId);
+  }
   case 'accounts': return run('INSERT INTO accounts(name,type,initial_balance,color) VALUES(?,?,?,?)',text(payload.name),name(payload.type)||'checking',integer(payload.initial_balance??0),name(payload.color)||'#9a8cf5');
   case 'categories': {const type=name(payload.type);if(!['income','expense'].includes(type)) throw Error('Tipo inválido.');return run('INSERT INTO categories(name,type,icon,color) VALUES(?,?,?,?)',text(payload.name),type,'tag',name(payload.color)||'#a48bf5');}
   case 'category-edit': {
