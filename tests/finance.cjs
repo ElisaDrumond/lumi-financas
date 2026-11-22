@@ -451,3 +451,37 @@ test('orçamento mensal por categoria contabiliza apenas pagamentos reais e aler
  assert.equal(readAll(month).transactions.some(t=>t.id===tx),true);
  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
+
+test('subcategorias reutilizáveis separam múltiplos orçamentos na mesma categoria',()=>{
+ const {categoryBudgetSummary}=require('../.test-build/budgets');
+ const month=shifted(9);
+ const acc=add('accounts',{name:'Conta subcategorias',initial_balance:200000});
+ const category=add('categories',{name:'Alimentação subcategorias teste',type:'expense'});
+ const horti=add('category-budget-save',{category_id:category,label_name:'Hortifruti',amount_cents:40000,start_period:month});
+ const market=add('category-budget-save',{category_id:category,label_name:'Mercado',amount_cents:25000,start_period:month});
+ assert.notEqual(horti,market);
+ assert.throws(()=>add('category-budget-save',{category_id:category,label_name:'hortifruti',amount_cents:40000,start_period:month}),/existe um orçamento/i);
+ const fruit=add('transactions',{description:'Fruta da semana',type:'expense',category_id:category,budget_label_name:'Hortifruti',amount_cents:5000,date:month+'-02',account_id:acc,status:'completed'});
+ const food=add('transactions',{description:'Supermercado',type:'expense',category_id:category,budget_label_name:'Mercado',amount_cents:15000,date:month+'-03',account_id:acc,status:'completed'});
+ const unlabeled=add('transactions',{description:'Padaria',type:'expense',category_id:category,amount_cents:9000,date:month+'-04',account_id:acc,status:'completed'});
+ let data=readAll(month);
+ let budgets=categoryBudgetSummary(data,month,acc);
+ assert.equal(budgets.find(b=>b.id===horti).spent_cents,5000);
+ assert.equal(budgets.find(b=>b.id===market).spent_cents,15000);
+ assert.equal(budgets.find(b=>b.id===horti).remaining_cents,35000);
+ assert.equal(data.budgetLabels.filter(l=>l.category_id===category).length,2);
+ assert.equal(data.transactions.find(t=>t.id===unlabeled).budget_label_id,null);
+ add('transaction-budget-label',{id:unlabeled,budget_label_name:'Hortifruti'});
+ data=readAll(month);
+ assert.equal(categoryBudgetSummary(data,month,acc).find(b=>b.id===horti).spent_cents,14000);
+ assert.equal(categoryBudgetSummary(data,month,acc).find(b=>b.id===market).spent_cents,15000);
+ const purchase=add('purchases',{description:'Feira parcelada',method:'boleto',total_cents:2000,installments_count:1,category_id:category,budget_label_name:'Hortifruti',purchased_on:month+'-01',first_due_on:month+'-06'});
+ const installment=readAll(month).installments.find(i=>i.purchase_id===purchase);
+ add('record-payment',{kind:'installment',id:installment.id,amount_cents:2000,account_id:acc,paid_on:month+'-06',settled:true});
+ data=readAll(month);
+ assert.equal(categoryBudgetSummary(data,month,acc).find(b=>b.id===horti).spent_cents,16000);
+ assert.equal(categoryBudgetSummary(data,month,acc).find(b=>b.id===market).spent_cents,15000);
+ assert.equal(data.transactions.find(t=>t.id===fruit).category_id,category);
+ assert.equal(data.transactions.find(t=>t.id===food).category_id,category);
+ assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+});
