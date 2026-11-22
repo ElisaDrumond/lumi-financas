@@ -218,7 +218,8 @@ test('pendências anteriores acompanham meses sem duplicar a obrigação ou alte
  assert.equal(planningSummary(state,view,a).outstandingIncome,15000);
  assert.equal(planningSummary(state,view,a).toPay,0);
  assert.equal(planningSummary(state,view,a).outstandingExpenses,17000);
- assert.equal(planningSummary(state,view,a).projected,202500);
+ // O boleto sem conta passa a pertencer a esta conta depois do primeiro pagamento.
+ assert.equal(planningSummary(state,view,a).projected,193500);
  assert.equal(state.occurrences.find(o=>o.id===oc.id).due_on,due);
  assert.equal(state.transactions.find(t=>t.id===expense).date,due);
  assert.equal(state.installments.find(i=>i.id===installment.id).due_on,due);
