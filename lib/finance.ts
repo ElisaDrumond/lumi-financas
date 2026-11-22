@@ -75,10 +75,6 @@ export function monthlyForecast(data:FinanceData,period:string,account:string|nu
  const adjustment=data.adjustments.filter(a=>a.adjusted_on.startsWith(period)&&relevant(a)).reduce((s,a)=>s+a.amount_cents,0);
  return {income,expense,reserves,adjustment,net:income-expense-reserves+adjustment};
 }
-function previousMonth(period:string){
- const [y,m]=period.split('-').map(Number);
- return new Date(Date.UTC(y,m-2,1)).toISOString().slice(0,7);
-}
 export function forecastOpening(data:FinanceData,period:string,account:string|number=''){
  const dates=[
   ...data.occurrences.map(o=>o.period),
