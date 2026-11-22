@@ -41,21 +41,87 @@ export function carryoverItems(data:FinanceData,period:string,account:string|num
  }
  return result.sort((a,b)=>a.due_on.localeCompare(b.due_on)||a.key.localeCompare(b.key));
 }
+/** Monthly budget forecast: obligations belong to their original competence, while actual payments are reported by payment date. */
+export function monthlyForecast(data:FinanceData,period:string,account:string|number=''){
+ const relevant=(r:Row)=>sameAccount(r,account);
+ const amountPaid=(id:number,kind:'occurrence'|'installment')=>data.payments.filter(p=>(kind==='occurrence'?p.occurrence_id:p.installment_id)===id).reduce((s,p)=>s+p.amount_cents,0);
+ const actualTx=(id:number)=>(data.transactionPayments??[]).filter(p=>p.transaction_id===id).reduce((s,p)=>s+p.amount_cents,0);
+ let income=0,expense=0,reserves=0;
+ for(const o of data.occurrences){
+  if(o.period!==period||o.status==='cancelled'||!relevant(o))continue;
+  const paid=amountPaid(o.id,'occurrence');
+  const value=o.status==='paid'&&paid>0?paid:o.amount_cents;
+  if(o.goal_id)reserves+=value;
+  else if(o.type==='income')income+=value;else expense+=value;
+ }
+ for(const t of data.transactions){
+  if(!t.date.startsWith(period)||!relevant(t))continue;
+  const paid=actualTx(t.id);
+  const value=t.status==='completed'?(paid||t.actual_cents||t.amount_cents):t.amount_cents;
+  if(t.type==='income')income+=value;else expense+=value;
+ }
+ for(const i of data.installments){
+  if(!i.due_on.startsWith(period))continue;
+  const owner=i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id;
+  if(account!==''&&Number(owner)!==Number(account))continue;
+  const paid=amountPaid(i.id,'installment');
+  expense+=i.paid_on&&paid>0?paid:i.amount_cents;
+ }
+ // Contributions attached to planned occurrences are already part of reserves.
+ for(const m of data.goalMovements){
+  if(!m.moved_on.startsWith(period)||!relevant(m)||m.occurrence_id)continue;
+  reserves+=(m.direction==='deposit'?1:-1)*m.amount_cents;
+ }
+ const adjustment=data.adjustments.filter(a=>a.adjusted_on.startsWith(period)&&relevant(a)).reduce((s,a)=>s+a.amount_cents,0);
+ return {income,expense,reserves,adjustment,net:income-expense-reserves+adjustment};
+}
+function previousMonth(period:string){
+ const [y,m]=period.split('-').map(Number);
+ return new Date(Date.UTC(y,m-2,1)).toISOString().slice(0,7);
+}
+export function forecastOpening(data:FinanceData,period:string,account:string|number=''){
+ const dates=[
+  ...data.occurrences.map(o=>o.period),
+  ...data.transactions.map(t=>t.date.slice(0,7)),
+  ...data.installments.map(i=>i.due_on.slice(0,7)),
+  ...data.goalMovements.map(m=>m.moved_on.slice(0,7)),
+  ...data.adjustments.map(a=>a.adjusted_on.slice(0,7))
+ ].filter(d=>/^\d{4}-(0[1-9]|1[0-2])$/.test(d)&&d<period);
+ const baseline=data.accounts.filter(a=>account===''||Number(a.id)===Number(account)).reduce((s,a)=>s+a.initial_balance,0);
+ if(!dates.length)return baseline;
+ let cursor=dates.reduce((old,date)=>date<old?date:old);
+ let opening=baseline;
+ // The initial account balances are the baseline; only known budget months are rolled forward.
+ for(let i=0;cursor<period&&i<240;i++){
+  opening+=monthlyForecast(data,cursor,account).net;
+  const next=new Date(Date.UTC(Number(cursor.slice(0,4)),Number(cursor.slice(5)),1)).toISOString().slice(0,7);
+  cursor=next;
+ }
+ return opening;
+}
 export function planningSummary(data:FinanceData,period:string,account:string|number=''){
  const items=data.occurrences.filter(o=>o.period===period&&o.status!=='cancelled'&&sameAccount(o,account));
  const sum=(type:string,pending=false,goal=false)=>items.filter(o=>o.type===type&&!!o.goal_id===goal).reduce((s,o)=>s+(pending?(o.status==='paid'?0:Math.max(0,o.amount_cents-o.paid_cents)):o.amount_cents),0);
  const cash=(type:string)=>data.transactions.filter(t=>(t.completed_on||t.date).startsWith(period)&&t.status!=='planned'&&t.type===type&&sameAccount(t,account)&&!(data.transactionPayments??[]).some(p=>p.transaction_id===t.id)).reduce((s,t)=>s+(t.actual_cents??t.amount_cents),0)
- + (data.transactionPayments??[]).filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)&&data.transactions.find(t=>t.id===p.transaction_id)?.type===type).reduce((s,p)=>s+p.amount_cents,0)+data.payments.filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)).reduce((s,p)=>{const o=data.occurrences.find(o=>o.id===p.occurrence_id);return s+((o?.type||'expense')===type?p.amount_cents:0)},0)+(type==='expense'?data.installments.filter(i=>i.paid_on?.startsWith(period)&&sameAccount(i,account)&&!data.payments.some(p=>p.installment_id===i.id)).reduce((s,i)=>s+i.amount_cents,0):0);
+ + (data.transactionPayments??[]).filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)&&data.transactions.find(t=>t.id===p.transaction_id)?.type===type).reduce((s,p)=>s+p.amount_cents,0)
+ +data.payments.filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)).reduce((s,p)=>{const o=data.occurrences.find(o=>o.id===p.occurrence_id);return s+((o?.type||'expense')===type?p.amount_cents:0)},0)
+ +(type==='expense'?data.installments.filter(i=>i.paid_on?.startsWith(period)&&sameAccount(i,account)&&!data.payments.some(p=>p.installment_id===i.id)).reduce((s,i)=>s+i.amount_cents,0):0);
  const goalOut=data.goalMovements.filter(m=>m.moved_on.startsWith(period)&&sameAccount(m,account)).reduce((s,m)=>s+(m.direction==='deposit'?1:-1)*m.amount_cents,0);
  const pendingInstallments=data.installments.filter(i=>!i.paid_on&&i.due_on.startsWith(period)&&sameAccount({...i,account_id:i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id},account)).reduce((s,i)=>s+Math.max(0,i.amount_cents-data.payments.filter(p=>p.installment_id===i.id).reduce((v,p)=>v+p.amount_cents,0)),0);
  const transactionDue=(t:Row)=>Math.max(0,t.amount_cents-(data.transactionPayments??[]).filter(p=>p.transaction_id===t.id).reduce((s,p)=>s+p.amount_cents,0));
  const pendingAvulsos=(type:string)=>data.transactions.filter(t=>t.status==='planned'&&t.type===type&&t.date.startsWith(period)&&sameAccount(t,account)).reduce((s,t)=>s+transactionDue(t),0);
  const carryover=carryoverItems(data,period,account);
- const overdueTotal=(type:'income'|'expense',goal:boolean)=>carryover.filter(x=>x.type===type&&x.goal===goal).reduce((s,x)=>s+x.remaining_cents,0);
- const carriedGoals=overdueTotal('expense',true),carriedExpenses=overdueTotal('expense',false),carriedIncome=overdueTotal('income',false);
- const toGoals=sum('expense',true,true)+carriedGoals,toPay=sum('expense',true)+pendingInstallments+pendingAvulsos('expense')+carriedExpenses,toReceive=sum('income',true)+pendingAvulsos('income')+carriedIncome;
- const balance=accountBalance(data,account),reserved=data.goals.reduce((s,g)=>s+g.saved_cents,0);
- return {income:sum('income')+pendingAvulsos('income'),expense:sum('expense')+pendingAvulsos('expense'),toReceive,toPay,toGoals,received:cash('income'),spent:cash('expense'),goalOut,balance,reserved,carryover,wealth:accountBalance(data)+reserved,projected:balance+toReceive-toPay-toGoals};
+ const outstandingExpenses=carryover.filter(x=>x.type==='expense'&&!x.goal).reduce((s,x)=>s+x.remaining_cents,0);
+ const outstandingIncome=carryover.filter(x=>x.type==='income').reduce((s,x)=>s+x.remaining_cents,0);
+ const toGoals=sum('expense',true,true);
+ const toPay=sum('expense',true)+pendingInstallments+pendingAvulsos('expense');
+ const toReceive=sum('income',true)+pendingAvulsos('income');
+ const monthly=monthlyForecast(data,period,account);
+ const openingBalance=forecastOpening(data,period,account);
+ const balance=accountBalance(data,account);
+ return {income:monthly.income,expense:monthly.expense,toReceive,toPay,toGoals,received:cash('income'),spent:cash('expense'),goalOut,balance,openingBalance,reserved:data.goals.reduce((s,g)=>s+g.saved_cents,0),
+  carryover,outstandingExpenses,outstandingIncome,wealth:accountBalance(data)+data.goals.reduce((s,g)=>s+g.saved_cents,0),
+  projected:openingBalance+monthly.net};
 }
 
 /** Planned expense by category for a selected competence month, without counting payments twice. */
