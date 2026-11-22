@@ -1,4 +1,5 @@
 ﻿export type Row=Record<string,any>;
+import {monthlyBudgetImpact} from './budgets';
 export type FinanceData={accounts:Row[],transactions:Row[],installments:Row[],payments:Row[],occurrences:Row[],adjustments:Row[],goals:Row[],goalMovements:Row[],transactionPayments?:Row[],cards?:Row[]};
 export const sameAccount=(row:Row,account:string|number='')=>account===''||Number(row.account_id)===Number(account);
 export function accountBalance(data:FinanceData,account:string|number=''){
@@ -110,7 +111,10 @@ export function monthlyForecast(data:FinanceData,period:string,account:string|nu
   reserves+=(m.direction==='deposit'?1:-1)*m.amount_cents;
  }
  const adjustment=data.adjustments.filter(a=>a.adjusted_on.startsWith(period)&&relevant(a)).reduce((s,a)=>s+a.amount_cents,0);
- return {income,expense,reserves,adjustment,net:income-expense-reserves+adjustment};
+ const budget=monthlyBudgetImpact(data,period,account);
+ const expenseAlreadyScheduled=expense;
+ expense+=budget.additional_cents;
+ return {income,expense,reserves,adjustment,expenseAlreadyScheduled,budgetAdditional:budget.additional_cents,budgetLimits:budget.limits_cents,net:income-expense-reserves+adjustment};
 }
 /** Actual settlement of obligations already included in an earlier reconciled closing. */
 export function oldSettlementFlow(data:FinanceData,period:string,closedThrough:string,account:string|number=''){
@@ -163,7 +167,8 @@ export function forecastOpening(data:FinanceData,period:string,account:string|nu
   ...data.transactions.map(t=>t.date.slice(0,7)),
   ...data.installments.map(i=>i.due_on.slice(0,7)),
   ...data.goalMovements.map(m=>m.moved_on.slice(0,7)),
-  ...data.adjustments.map(a=>a.adjusted_on.slice(0,7))
+  ...data.adjustments.map(a=>a.adjusted_on.slice(0,7)),
+  ...((data as FinanceData & {categoryBudgets?:Row[]}).categoryBudgets??[]).filter(b=>b.status==='active').map(b=>b.start_period)
  ].filter(d=>/^\d{4}-(0[1-9]|1[0-2])$/.test(d)&&d<period);
  const baseline=data.accounts.filter(a=>account===''||Number(a.id)===Number(account)).reduce((s,a)=>s+a.initial_balance,0);
  if(!dates.length)return baseline;
@@ -199,7 +204,7 @@ export function planningSummary(data:FinanceData,period:string,account:string|nu
  const latestClosed=(data as FinanceData & {monthClosures?:Row[]}).monthClosures?.filter(c=>c.period<period).sort((a,b)=>b.period.localeCompare(a.period))[0];
  const broughtForward=latestClosed?oldSettlementFlow(data,period,latestClosed.period,account):{income:0,expense:0,reserves:0,net:0};
  const balance=accountBalance(data,account);
- return {income:monthly.income+broughtForward.income,expense:monthly.expense+broughtForward.expense,toReceive,toPay,toGoals,received:cash('income'),spent:cash('expense'),goalOut,balance,openingBalance,reserved:data.goals.reduce((s,g)=>s+g.saved_cents,0),
+ return {income:monthly.income+broughtForward.income,expense:monthly.expense+broughtForward.expense,expenseAlreadyScheduled:monthly.expenseAlreadyScheduled+broughtForward.expense,budgetAdditional:monthly.budgetAdditional,budgetLimits:monthly.budgetLimits,toReceive,toPay,toGoals,received:cash('income'),spent:cash('expense'),goalOut,balance,openingBalance,reserved:data.goals.reduce((s,g)=>s+g.saved_cents,0),
   carryover,outstandingExpenses,outstandingIncome,wealth:accountBalance(data)+data.goals.reduce((s,g)=>s+g.saved_cents,0),
   projected:openingBalance+monthly.net+broughtForward.net,
   hasClosedAnchor:!!latestClosed,
