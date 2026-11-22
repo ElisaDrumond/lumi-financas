@@ -80,7 +80,8 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
   }
   case 'transaction-replan': {
    const target=id(payload.id);
-   const tx=db.prepare('SELECT id,status FROM transactions WHERE id=?').get(target) as {id:number;status:string}|undefined;
+   const tx=db.prepare('SELECT id,status,date,completed_on FROM transactions WHERE id=?').get(target) as {id:number;status:string;date:string;completed_on:string|null}|undefined;
+   if(tx){ensureOpen(tx.date);if(tx.completed_on)ensureOpen(tx.completed_on);}
    if(!tx||tx.status!=='completed')throw Error('Só lançamentos realizados podem voltar para previstos.');
    if(db.prepare('SELECT 1 FROM transaction_payments WHERE transaction_id=? LIMIT 1').get(target))throw Error('Existem pagamentos vinculados: não é possível apagar movimentações reais ao tornar prevista.');
    return run("UPDATE transactions SET status='planned',actual_cents=NULL,completed_on=NULL WHERE id=? AND status='completed'",target);
@@ -112,7 +113,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const card=method==='card'?id(payload.card_id):null;
    const count=integer(payload.installments_count),total=positive(payload.total_cents);
    if(count<1||count>120||count>total)throw Error('Quantidade de parcelas inválida.');
-   const first=date(payload.first_due_on), purchased=date(payload.purchased_on);
+   const first=date(payload.first_due_on), purchased=date(payload.purchased_on);ensureOpen(first);
    const due=new Date(first+'T12:00:00Z');const dueDay=due.getUTCDate();
    db.exec('BEGIN IMMEDIATE');
    try{

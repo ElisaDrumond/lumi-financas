@@ -56,7 +56,7 @@ export default function MonthClosing({period,refresh,closures,closureAccounts,cl
    description:'Os saldos conciliados serão preservados como abertura do próximo mês. Pendências continuarão ligadas às datas originais. Nenhum pagamento ou ajuste bancário será criado automaticamente.',
    confirmLabel:'Fechar mês',
    successMessage:'Mês conciliado e fechado.',
-   onConfirm:()=>run('month-close',{period,notes,confirm_differences:delta!==0,accounts:rows.map(a=>({account_id:a.id,reconciled_cents:a.reconciled_cents,expected_calculated_cents:a.calculated_cents}))})
+   onConfirm:()=>run('month-close',{period,notes,confirm_differences:delta!==0,expected_pending_signature:preview.pending.map(p=>[p.kind,p.id,p.due_on,p.remaining_cents].join(':')).join('|'),expected_received_cents:preview.flow.received,expected_spent_cents:preview.flow.spent,accounts:rows.map(a=>({account_id:a.id,reconciled_cents:a.reconciled_cents,expected_calculated_cents:a.calculated_cents}))})
   });
  };
  const reopen=()=>confirm({

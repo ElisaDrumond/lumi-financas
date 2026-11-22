@@ -61,6 +61,10 @@ export function closeMonth(payload:Record<string,unknown>){
  if(preview.existing)throw Error('Este mês já foi fechado.');
  const future=db.prepare('SELECT period FROM month_closures WHERE period>? ORDER BY period LIMIT 1').get(period) as {period:string}|undefined;
  if(future)throw Error('Existe um mês posterior já fechado. Reabra os fechamentos posteriores antes de fechar este mês.');
+ const signature=(items:Pending[])=>items.map(p=>[p.kind,p.id,p.due_on,p.remaining_cents].join(':')).join('|');
+ if(payload.expected_pending_signature!==undefined&&String(payload.expected_pending_signature)!==signature(preview.pending))throw Error('As pendências mudaram durante a conferência. Atualize a prévia antes de fechar.');
+ if(payload.expected_received_cents!==undefined&&Number(payload.expected_received_cents)!==preview.flow.received)throw Error('As receitas realizadas mudaram. Atualize a prévia.');
+ if(payload.expected_spent_cents!==undefined&&Number(payload.expected_spent_cents)!==preview.flow.spent)throw Error('As despesas realizadas mudaram. Atualize a prévia.');
  const note=String(payload.notes??'').trim();
  if(note.length>500)throw Error('As observações devem ter no máximo 500 caracteres.');
  const checked=provided.map(x=>{
