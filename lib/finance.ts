@@ -12,6 +12,43 @@ export function accountBalance(data:FinanceData,account:string|number=''){
  +sum(data.adjustments,a=>a.amount_cents)
  +sum(data.goalMovements,m=>(m.direction==='deposit'?-1:1)*m.amount_cents);
 }
+/** Reconstruct actual account balances through a date without counting future payments. */
+export function accountBalanceThrough(data:FinanceData,through:string,account:string|number=''){
+ const belongs=(id:number|null|undefined)=>account===''||id!=null&&Number(id)===Number(account);
+ let total=data.accounts.filter(a=>belongs(a.id)).reduce((s,a)=>s+a.initial_balance,0);
+ const transactionPaid=new Set((data.transactionPayments??[]).map(p=>p.transaction_id));
+ for(const t of data.transactions){
+  if(t.status!=='completed'||transactionPaid.has(t.id)||!belongs(t.account_id)||(t.completed_on||t.date)>through)continue;
+  total+=(t.type==='income'?1:-1)*(t.actual_cents??t.amount_cents);
+ }
+ for(const p of data.transactionPayments??[]){
+  if(p.paid_on>through||!belongs(p.account_id))continue;
+  const original=data.transactions.find(t=>t.id===p.transaction_id);
+  if(original)total+=(original.type==='income'?1:-1)*p.amount_cents;
+ }
+ for(const p of data.payments){
+  if(p.paid_on>through||!belongs(p.account_id))continue;
+  const original=data.occurrences.find(o=>o.id===p.occurrence_id);
+  total+=(original?.type==='income'?1:-1)*p.amount_cents;
+ }
+ for(const i of data.installments){
+  if(i.paid_on&&i.paid_on<=through&&!data.payments.some(p=>p.installment_id===i.id)&&belongs(i.account_id))total-=i.amount_cents;
+ }
+ for(const a of data.adjustments)if(a.adjusted_on<=through&&belongs(a.account_id))total+=a.amount_cents;
+ for(const m of data.goalMovements)if(m.moved_on<=through&&belongs(m.account_id))total+=(m.direction==='deposit'?-1:1)*m.amount_cents;
+ return total;
+}
+export function cashFlowForMonth(data:FinanceData,period:string,account:string|number=''){
+ const relevant=(id:number)=>account===''||Number(id)===Number(account);
+ let received=0,spent=0;
+ const seen=new Set((data.transactionPayments??[]).map(p=>p.transaction_id));
+ const add=(type:string,value:number)=>{if(type==='income')received+=value;else spent+=value;};
+ for(const t of data.transactions)if(t.status==='completed'&&!seen.has(t.id)&&relevant(t.account_id)&&(t.completed_on||t.date).startsWith(period))add(t.type,t.actual_cents??t.amount_cents);
+ for(const p of data.transactionPayments??[])if(relevant(p.account_id)&&p.paid_on.startsWith(period))add(data.transactions.find(t=>t.id===p.transaction_id)?.type||'expense',p.amount_cents);
+ for(const p of data.payments)if(relevant(p.account_id)&&p.paid_on.startsWith(period))add(data.occurrences.find(o=>o.id===p.occurrence_id)?.type||'expense',p.amount_cents);
+ for(const i of data.installments)if(i.paid_on?.startsWith(period)&&relevant(i.account_id)&&!data.payments.some(p=>p.installment_id===i.id))spent+=i.amount_cents;
+ return {received,spent};
+}
 export type CarryoverItem={key:string;kind:'occurrence'|'transaction'|'installment';id:number;description:string;type:'income'|'expense';goal:boolean;goal_id?:number|null;due_on:string;account_id:number|null;account_name:string;amount_cents:number;paid_cents:number;remaining_cents:number};
 /** Outstanding prior-period obligations, grouped only in the UI, never copied or re-dated. */
 export function carryoverItems(data:FinanceData,period:string,account:string|number=''):CarryoverItem[]{
@@ -76,6 +113,19 @@ export function monthlyForecast(data:FinanceData,period:string,account:string|nu
  return {income,expense,reserves,adjustment,net:income-expense-reserves+adjustment};
 }
 export function forecastOpening(data:FinanceData,period:string,account:string|number=''){
+ const closingRows=(data as FinanceData & {monthClosures?:Row[];monthClosureAccounts?:Row[]}).monthClosures??[];
+ const closingAccounts=(data as FinanceData & {monthClosures?:Row[];monthClosureAccounts?:Row[]}).monthClosureAccounts??[];
+ const latest=closingRows.filter(c=>c.period<period).sort((a,b)=>b.period.localeCompare(a.period))[0];
+ if(latest){
+  const included=closingAccounts.filter(c=>c.closure_id===latest.id&&(account===''||Number(c.account_id)===Number(account)));
+  let opening=included.reduce((s,c)=>s+c.reconciled_cents,0);
+  let cursor=new Date(Date.UTC(Number(latest.period.slice(0,4)),Number(latest.period.slice(5)),1)).toISOString().slice(0,7);
+  for(let i=0;cursor<period&&i<240;i++){
+   opening+=monthlyForecast(data,cursor,account).net;
+   cursor=new Date(Date.UTC(Number(cursor.slice(0,4)),Number(cursor.slice(5)),1)).toISOString().slice(0,7);
+  }
+  return opening;
+ }
  const dates=[
   ...data.occurrences.map(o=>o.period),
   ...data.transactions.map(t=>t.date.slice(0,7)),
