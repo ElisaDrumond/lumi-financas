@@ -1,6 +1,6 @@
 import db from './db';
 import {readAll} from './data';
-import {accountBalanceThrough,cashFlowForMonth} from './finance';
+import {accountBalanceThrough,cashFlowForMonth,type FinanceData,type Row} from './finance';
 
 const validPeriod=(value:unknown)=>{
  const p=String(value??'');
@@ -11,7 +11,8 @@ const endOfMonth=(period:string)=>new Date(Date.UTC(Number(period.slice(0,4)),Nu
 const currentMonth=()=>new Date().toLocaleDateString('en-CA').slice(0,7);
 type SnapshotAccount={id:number;name:string;calculated_cents:number;reconciled_cents:number};
 type Pending={kind:'occurrence'|'transaction'|'installment';id:number;type:string;description:string;due_on:string;remaining_cents:number};
-function unresolved(data:ReturnType<typeof readAll>,period:string):Pending[]{
+type Ledger=FinanceData & {monthClosures:Row[]};
+function unresolved(data:Ledger,period:string):Pending[]{
  const end=endOfMonth(period),entries:Pending[]=[];
  for(const o of data.occurrences){
   if(o.due_on>end||o.status==='cancelled')continue;
@@ -23,7 +24,7 @@ function unresolved(data:ReturnType<typeof readAll>,period:string):Pending[]{
  }
  for(const t of data.transactions){
   if(t.date>end)continue;
-  const records=data.transactionPayments.filter(p=>p.transaction_id===t.id&&p.paid_on<=end);
+  const records=(data.transactionPayments??[]).filter(p=>p.transaction_id===t.id&&p.paid_on<=end);
   if(records.some(p=>p.settled)||t.status==='completed'&&(t.completed_on||t.date)<=end)continue;
   const paid=records.reduce((s,p)=>s+p.amount_cents,0);
   const remaining=Math.max(0,t.amount_cents-paid);
@@ -41,7 +42,7 @@ function unresolved(data:ReturnType<typeof readAll>,period:string):Pending[]{
 }
 export function closingPreview(periodArg:unknown){
  const period=validPeriod(periodArg);
- const data=readAll(period),end=endOfMonth(period);
+ const data=readAll(period) as unknown as Ledger,end=endOfMonth(period);
  const accounts:SnapshotAccount[]=data.accounts.map(a=>({id:a.id,name:a.name,calculated_cents:accountBalanceThrough(data,end,a.id),reconciled_cents:accountBalanceThrough(data,end,a.id)}));
  const pending=unresolved(data,period),flow=cashFlowForMonth(data,period);
  const existing=data.monthClosures.find(c=>c.period===period)??null;

@@ -10,7 +10,7 @@ type Preview={period:string;end:string;accounts:Account[];pending:Pending[];flow
 type Closure={id:number;period:string;notes:string;closed_at:string};
 type Props={period:string;refresh:(period?:string)=>Promise<void>;closures:Closure[];closureAccounts:Record<string,any>[];closurePending:Record<string,any>[]};
 const money=(n:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n/100);
-const parse=(v:string)=>Math.round(Number(v.replace(',','.'))*100);
+const parse=(v:string)=>v.trim()===''?Number.NaN:Math.round(Number(v.replace(',','.'))*100);
 export default function MonthClosing({period,refresh,closures,closureAccounts,closurePending}:Props){
  const confirm=useConfirm();
  const [expanded,setExpanded]=useState(false),[preview,setPreview]=useState<Preview|null>(null);
@@ -46,7 +46,7 @@ export default function MonthClosing({period,refresh,closures,closureAccounts,cl
    const result=await response.json();
    if(!response.ok)throw Error(result.error||'Não foi possível concluir a operação.');
    await refresh(period);setPreview(null);setExpanded(false);
-  }catch(e){setError(e instanceof Error?e.message:'Erro ao salvar o fechamento.');}
+  }catch(e){setError(e instanceof Error?e.message:'Erro ao salvar o fechamento.');throw e;}
   finally{setSaving(false);}
  };
  const save=()=>{
@@ -81,7 +81,7 @@ export default function MonthClosing({period,refresh,closures,closureAccounts,cl
     <div className="month-close-metrics"><div><small>Recebido no mês</small><strong>{money(preview.flow.received)}</strong></div><div><small>Pago no mês</small><strong>{money(preview.flow.spent)}</strong></div><div><small>Despesas pendentes</small><strong>{money(preview.pending_expense_cents)}</strong></div><div><small>Receitas pendentes</small><strong>{money(preview.pending_income_cents)}</strong></div></div>
     <h4>1. Conferir saldos reais por conta</h4>
     <p className="month-close-hint">Digite quanto realmente havia em cada conta em {new Date(preview.end+'T12:00:00').toLocaleDateString('pt-BR')}. Uma diferença será registrada na conciliação, sem criar uma movimentação bancária fictícia.</p>
-    <div className="month-close-accounts">{preview.accounts.map(a=><div className="month-close-account" key={a.id}><div><strong>{a.name}</strong><small>Calculado pelo Lumi: {money(a.calculated_cents)}</small></div><div className="month-close-input"><MoneyInput value={values[a.id]??''} onValueChange={v=>setValues(old=>({...old,[a.id]:v}))}/><small>Diferença: {money((rows.find(r=>r.id===a.id)?.reconciled_cents??a.calculated_cents)-a.calculated_cents)}</small></div></div>)}</div>
+    <div className="month-close-accounts">{preview.accounts.map(a=><div className="month-close-account" key={a.id}><div><strong>{a.name}</strong><small>Calculado pelo Lumi: {money(a.calculated_cents)}</small></div><div className="month-close-input"><MoneyInput allowNegative value={values[a.id]??''} onValueChange={v=>setValues(old=>({...old,[a.id]:v}))}/><small>Diferença: {money((rows.find(r=>r.id===a.id)?.reconciled_cents??a.calculated_cents)-a.calculated_cents)}</small></div></div>)}</div>
     <div className="month-close-total"><span>Saldo real conferido</span><strong>{money(total)}</strong></div>
     <h4>2. Revisar pendências</h4>
     <p className="month-close-hint">As pendências abaixo continuam abertas na data original. Se precisar registrar um pagamento ou recebimento, use o botão correspondente nas listas do Planejamento e atualize a prévia antes de fechar.</p>
