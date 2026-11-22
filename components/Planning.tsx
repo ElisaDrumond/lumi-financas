@@ -20,7 +20,7 @@ export default function Planning({data,refresh}:Props){
  const [account,setAccount]=useState('');
  const [typeFilter,setTypeFilter]=useState<'all'|'income'|'expense'>('all');
  const [period,setPeriod]=useState(iso().slice(0,7));
- const [sorts,setSorts]=useState<Record<string,SortKey>>({carryover:'date-asc',occurrences:'date-asc',installments:'date-asc',oneoffs:'date-asc',recurrings:'name-asc'});
+ const [sorts,setSorts]=useState<Record<string,SortKey>>({carryover:'date-asc',receipts:'date-asc',occurrences:'date-asc',installments:'date-asc',oneoffs:'date-asc',recurrings:'name-asc'});
  const sortValue=(section:string)=>sorts[section]||'date-asc';
  const changeSort=(section:string,value:SortKey)=>setSorts(prev=>({...prev,[section]:value}));
  const sorted=<T,>(rows:T[],section:string,field:{date:(x:T)=>string;name:(x:T)=>string;amount:(x:T)=>number})=>sortRecords(rows,sortValue(section),field);
@@ -64,7 +64,9 @@ export default function Planning({data,refresh}:Props){
  const tag=(id:unknown)=>{const c=categoryOf(id);return <CategoryLabel name={c?.name} color={c?.color}/>};
  const expenseChart=useMemo(()=>expenseByCategory(data,period,account),[data,period,account]);
  const sums=useMemo(()=>planningSummary(data,period,account),[data,period,account]);
- const carried=useMemo(()=>carryoverItems(data,period,account).filter(x=>typeMatches(x)),[data,period,account,typeFilter]);
+ const overdue=useMemo(()=>carryoverItems(data,period,account),[data,period,account]);
+ const carried=useMemo(()=>overdue.filter(x=>x.type==='expense'&&typeMatches(x)),[overdue,typeFilter]);
+ const overdueReceipts=useMemo(()=>overdue.filter(x=>x.type==='income'&&typeMatches(x)),[overdue,typeFilter]);
  const installments=useMemo(()=>typeFilter==='income'?[]:data.installments.filter(i=>i.due_on.startsWith(period)&& (account===''||Number(i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id)===Number(account))),[data,period,account,typeFilter]);
  const installmentPayment=(i:Row)=>data.payments.filter(p=>p.installment_id===i.id).reduce((sum,p)=>sum+p.amount_cents,0);
  const installmentOwner=(i:Row)=>i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id??null;
@@ -84,9 +86,15 @@ export default function Planning({data,refresh}:Props){
    <ExpenseCategoryChart items={expenseChart} period={period}/>
    <details className="planning-fold" open>
     {sectionTitle('Pendências anteriores',carried.length)}
-    <div className="planning-fold-body"><p className="footnote">Contas e receitas de meses anteriores. Vencimento e competência originais preservados.</p>
+    <div className="planning-fold-body"><p className="footnote">Despesas não quitadas de meses anteriores. Vencimento e competência originais preservados; os valores já compõem a projeção do mês em que venceram.</p>
     {carried.length>0&&sectionSort('carryover')}
     {carried.length>0?<div className="carryover-list">{sorted(carried,'carryover',{date:x=>x.due_on,name:x=>x.description,amount:x=>x.remaining_cents}).map(item=><div className="carryover-row" key={item.key}><div className="carryover-info"><strong>{item.description}</strong><small>{item.goal?'Aporte previsto':item.type==='income'?'Receita a receber':'Despesa a pagar'} · {item.account_name} · Vencimento original: {new Date(item.due_on+'T12:00:00').toLocaleDateString('pt-BR')}</small>{tag(item.kind==='occurrence'?data.occurrences.find(o=>o.id===item.id)?.category_id:item.kind==='transaction'?data.transactions.find(t=>t.id===item.id)?.category_id:data.purchases.find(p=>p.id===data.installments.find(i=>i.id===item.id)?.purchase_id)?.category_id)}{item.paid_cents>0&&<small>Já realizado: {money(item.paid_cents)} · Restante: {money(item.remaining_cents)}</small>}</div><div className="carryover-side"><strong>{money(item.remaining_cents)}</strong><span className="status pending">{item.paid_cents>0?'Parcial':'Pendente'}</span><button className="small-btn" onClick={()=>launchCarryover(item)}><Check size={13}/>{item.goal?'Aportar':item.type==='income'?'Receber':'Pagar'}</button></div></div>)}</div>:<p className="carryover-empty">Sem pendências anteriores. ✨</p>}</div>
+   </details>
+   <details className="planning-fold">
+    {sectionTitle('Recebimentos em atraso',overdueReceipts.length)}
+    <div className="planning-fold-body"><p className="footnote">Receitas previstas em meses anteriores que ainda não entraram. Continuam disponíveis para confirmação, mas não são somadas novamente às receitas do mês atual.</p>
+    {overdueReceipts.length>0&&sectionSort('receipts')}
+    {overdueReceipts.length>0?<div className="carryover-list">{sorted(overdueReceipts,'receipts',{date:x=>x.due_on,name:x=>x.description,amount:x=>x.remaining_cents}).map(item=><div className="carryover-row" key={item.key}><div className="carryover-info"><strong>{item.description}</strong><small>{item.account_name} · Previsto originalmente em {new Date(item.due_on+'T12:00:00').toLocaleDateString('pt-BR')}</small>{tag(item.kind==='occurrence'?data.occurrences.find(o=>o.id===item.id)?.category_id:data.transactions.find(t=>t.id===item.id)?.category_id)}{item.paid_cents>0&&<small>Já recebido: {money(item.paid_cents)}</small>}</div><div className="carryover-side"><strong>{money(item.remaining_cents)}</strong><span className="status pending">A receber</span><button className="small-btn" onClick={()=>launchCarryover(item)}><Check size={13}/> Receber</button></div></div>)}</div>:<p className="carryover-empty">Sem recebimentos atrasados. ✨</p>}</div>
    </details>
    <details className="planning-fold" open>
     {sectionTitle('Ocorrências deste mês',items.length)}
