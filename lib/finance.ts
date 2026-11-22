@@ -112,6 +112,38 @@ export function monthlyForecast(data:FinanceData,period:string,account:string|nu
  const adjustment=data.adjustments.filter(a=>a.adjusted_on.startsWith(period)&&relevant(a)).reduce((s,a)=>s+a.amount_cents,0);
  return {income,expense,reserves,adjustment,net:income-expense-reserves+adjustment};
 }
+/** Actual settlement of obligations already included in an earlier reconciled closing. */
+export function oldSettlementFlow(data:FinanceData,period:string,closedThrough:string,account:string|number=''){
+ const match=(date:string|undefined|null)=>!!date&&date.slice(0,7)<=closedThrough;
+ const paidMonth=(date:string)=>date.startsWith(period);
+ const owner=(id:number|null|undefined)=>account===''||id!=null&&Number(id)===Number(account);
+ let income=0,expense=0,reserves=0;
+ const txPaidIds=new Set((data.transactionPayments??[]).map(p=>p.transaction_id));
+ for(const p of data.transactionPayments??[]){
+  const t=data.transactions.find(t=>t.id===p.transaction_id);
+  if(!t||!match(t.date)||!paidMonth(p.paid_on)||!owner(p.account_id))continue;
+  if(t.type==='income')income+=p.amount_cents;else expense+=p.amount_cents;
+ }
+ for(const t of data.transactions){
+  if(t.status!=='completed'||txPaidIds.has(t.id)||!match(t.date)||!paidMonth(t.completed_on||t.date)||!owner(t.account_id))continue;
+  if(t.type==='income')income+=t.actual_cents??t.amount_cents;else expense+=t.actual_cents??t.amount_cents;
+ }
+ for(const p of data.payments){
+  if(!paidMonth(p.paid_on)||!owner(p.account_id))continue;
+  const o=data.occurrences.find(o=>o.id===p.occurrence_id);
+  const i=data.installments.find(i=>i.id===p.installment_id);
+  if(o&&match(o.due_on)){if(o.type==='income')income+=p.amount_cents;else expense+=p.amount_cents;}
+  if(i&&match(i.due_on))expense+=p.amount_cents;
+ }
+ for(const i of data.installments){
+  if(match(i.due_on)&&i.paid_on&&paidMonth(i.paid_on)&&owner(i.account_id)&&!data.payments.some(p=>p.installment_id===i.id))expense+=i.amount_cents;
+ }
+ for(const m of data.goalMovements){
+  const o=data.occurrences.find(o=>o.id===m.occurrence_id);
+  if(o&&match(o.due_on)&&paidMonth(m.moved_on)&&owner(m.account_id))reserves+=(m.direction==='deposit'?1:-1)*m.amount_cents;
+ }
+ return {income,expense,reserves,net:income-expense-reserves};
+}
 export function forecastOpening(data:FinanceData,period:string,account:string|number=''){
  const closingRows=(data as FinanceData & {monthClosures?:Row[];monthClosureAccounts?:Row[]}).monthClosures??[];
  const closingAccounts=(data as FinanceData & {monthClosures?:Row[];monthClosureAccounts?:Row[]}).monthClosureAccounts??[];
@@ -121,7 +153,7 @@ export function forecastOpening(data:FinanceData,period:string,account:string|nu
   let opening=included.reduce((s,c)=>s+c.reconciled_cents,0);
   let cursor=new Date(Date.UTC(Number(latest.period.slice(0,4)),Number(latest.period.slice(5)),1)).toISOString().slice(0,7);
   for(let i=0;cursor<period&&i<240;i++){
-   opening+=monthlyForecast(data,cursor,account).net;
+   opening+=monthlyForecast(data,cursor,account).net+oldSettlementFlow(data,cursor,latest.period,account).net;
    cursor=new Date(Date.UTC(Number(cursor.slice(0,4)),Number(cursor.slice(5)),1)).toISOString().slice(0,7);
   }
   return opening;
@@ -164,11 +196,14 @@ export function planningSummary(data:FinanceData,period:string,account:string|nu
  const toReceive=sum('income',true)+pendingAvulsos('income');
  const monthly=monthlyForecast(data,period,account);
  const openingBalance=forecastOpening(data,period,account);
+ const latestClosed=(data as FinanceData & {monthClosures?:Row[]}).monthClosures?.filter(c=>c.period<period).sort((a,b)=>b.period.localeCompare(a.period))[0];
+ const broughtForward=latestClosed?oldSettlementFlow(data,period,latestClosed.period,account):{income:0,expense:0,reserves:0,net:0};
  const balance=accountBalance(data,account);
- return {income:monthly.income,expense:monthly.expense,toReceive,toPay,toGoals,received:cash('income'),spent:cash('expense'),goalOut,balance,openingBalance,reserved:data.goals.reduce((s,g)=>s+g.saved_cents,0),
+ return {income:monthly.income+broughtForward.income,expense:monthly.expense+broughtForward.expense,toReceive,toPay,toGoals,received:cash('income'),spent:cash('expense'),goalOut,balance,openingBalance,reserved:data.goals.reduce((s,g)=>s+g.saved_cents,0),
   carryover,outstandingExpenses,outstandingIncome,wealth:accountBalance(data)+data.goals.reduce((s,g)=>s+g.saved_cents,0),
-  projected:openingBalance+monthly.net,
-  conservativeProjected:openingBalance+monthly.net-outstandingIncome};
+  projected:openingBalance+monthly.net+broughtForward.net,
+  hasClosedAnchor:!!latestClosed,
+  conservativeProjected:openingBalance+monthly.net+broughtForward.net-(latestClosed?0:outstandingIncome)};
 }
 
 /** Planned expense by category for a selected competence month, without counting payments twice. */
