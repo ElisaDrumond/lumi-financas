@@ -21,7 +21,7 @@ export function readAll(period?:string) {
   transactionPayments: query('SELECT * FROM transaction_payments ORDER BY paid_on DESC,id DESC'),
   adjustments: query('SELECT * FROM balance_adjustments ORDER BY adjusted_on DESC'),
   monthClosures: query('SELECT * FROM month_closures ORDER BY period DESC'),
-  monthClosureAccounts: query('SELECT * FROM month_closure_accounts ORDER BY closure_id,account_id'),
+  monthClosureAccounts: query('SELECT ca.*,a.name AS account_name FROM month_closure_accounts ca JOIN accounts a ON a.id=ca.account_id ORDER BY ca.closure_id,ca.account_id'),
   monthClosurePending: query('SELECT * FROM month_closure_pending ORDER BY closure_id,due_on'),
  };
 }
