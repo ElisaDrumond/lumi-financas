@@ -216,6 +216,7 @@ test('pendências anteriores acompanham meses sem duplicar a obrigação ou alte
  assert.equal(accountBalance(state,a),195500);
  assert.equal(planningSummary(state,view,a).toReceive,0);
  assert.equal(planningSummary(state,view,a).outstandingIncome,15000);
+ assert.equal(planningSummary(state,view,a).conservativeProjected,planningSummary(state,view,a).projected-15000);
  assert.equal(planningSummary(state,view,a).toPay,0);
  assert.equal(planningSummary(state,view,a).outstandingExpenses,17000);
  // O boleto sem conta passa a pertencer a esta conta depois do primeiro pagamento.
@@ -332,6 +333,7 @@ test('visão mensal projeta saldo inicial do fechamento anterior sem acumular re
  assert.equal(second.toReceive,826615);
  assert.equal(second.toPay,173664);
  assert.equal(second.outstandingIncome,83334);
+ assert.equal(second.conservativeProjected,second.projected-83334);
  assert.equal(second.outstandingExpenses,96819);
  assert.equal(second.projected,639466);
  assert.equal(third.openingBalance,second.projected);
@@ -340,6 +342,7 @@ test('visão mensal projeta saldo inicial do fechamento anterior sem acumular re
  assert.equal(third.toReceive,755850);
  assert.equal(third.toPay,173664);
  assert.equal(third.outstandingIncome,83334+826615);
+ assert.equal(third.conservativeProjected,third.projected-(83334+826615));
  assert.equal(third.projected,1221652);
  assert.equal(planningSummary(data,nov,b).projected,15000);
  assert.equal(planningSummary(data,dez,b).openingBalance,15000);
