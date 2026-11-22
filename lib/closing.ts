@@ -1,6 +1,7 @@
 import db from './db';
 import {readAll} from './data';
 import {accountBalanceThrough,cashFlowForMonth,type FinanceData,type Row} from './finance';
+import {categoryBudgetSummary} from './budgets';
 
 const validPeriod=(value:unknown)=>{
  const p=String(value??'');
@@ -45,8 +46,15 @@ export function closingPreview(periodArg:unknown){
  const data=readAll(period) as unknown as Ledger,end=endOfMonth(period);
  const accounts:SnapshotAccount[]=data.accounts.map(a=>({id:a.id,name:a.name,calculated_cents:accountBalanceThrough(data,end,a.id),reconciled_cents:accountBalanceThrough(data,end,a.id)}));
  const pending=unresolved(data,period),flow=cashFlowForMonth(data,period);
+ const budgets=categoryBudgetSummary(data,period);
+ const budgetTotals=budgets.reduce((result,b)=>({
+  limit_cents:result.limit_cents+b.limit_cents,
+  spent_cents:result.spent_cents+b.spent_cents,
+  unused_cents:result.unused_cents+Math.max(0,b.remaining_cents),
+  exceeded_cents:result.exceeded_cents+Math.max(0,-b.remaining_cents)
+ }),{limit_cents:0,spent_cents:0,unused_cents:0,exceeded_cents:0});
  const existing=data.monthClosures.find(c=>c.period===period)??null;
- return {period,end,accounts,pending,flow,existing,
+ return {period,end,accounts,pending,flow,budgets,budgetTotals,existing,
   total_calculated_cents:accounts.reduce((s,a)=>s+a.calculated_cents,0),
   pending_income_cents:pending.filter(p=>p.type==='income').reduce((s,p)=>s+p.remaining_cents,0),
   pending_expense_cents:pending.filter(p=>p.type==='expense').reduce((s,p)=>s+p.remaining_cents,0),
@@ -65,6 +73,8 @@ export function closeMonth(payload:Record<string,unknown>){
  if(payload.expected_pending_signature!==undefined&&String(payload.expected_pending_signature)!==signature(preview.pending))throw Error('As pendências mudaram durante a conferência. Atualize a prévia antes de fechar.');
  if(payload.expected_received_cents!==undefined&&Number(payload.expected_received_cents)!==preview.flow.received)throw Error('As receitas realizadas mudaram. Atualize a prévia.');
  if(payload.expected_spent_cents!==undefined&&Number(payload.expected_spent_cents)!==preview.flow.spent)throw Error('As despesas realizadas mudaram. Atualize a prévia.');
+ const budgetSignature=(rows:typeof preview.budgets)=>rows.map(b=>[b.id,b.limit_cents,b.spent_cents].join(':')).join('|');
+ if(payload.expected_budget_signature!==undefined&&String(payload.expected_budget_signature)!==budgetSignature(preview.budgets))throw Error('Os orçamentos mudaram durante a conferência. Atualize a prévia antes de fechar.');
  const note=String(payload.notes??'').trim();
  if(note.length>500)throw Error('As observações devem ter no máximo 500 caracteres.');
  const checked=provided.map(x=>{
@@ -91,6 +101,8 @@ export function closeMonth(payload:Record<string,unknown>){
   for(const a of submitted)insertAccount.run(closureId,a.account_id,a.reconciled_cents,a.calculated_cents);
   const insertPending=db.prepare('INSERT INTO month_closure_pending(closure_id,kind,record_id,type,description,due_on,remaining_cents) VALUES(?,?,?,?,?,?,?)');
   for(const p of preview.pending)insertPending.run(closureId,p.kind,p.id,p.type,p.description,p.due_on,p.remaining_cents);
+  const insertBudget=db.prepare('INSERT INTO month_closure_budgets(closure_id,budget_id,category_name,label_name,limit_cents,spent_cents,unused_cents,exceeded_cents) VALUES(?,?,?,?,?,?,?,?)');
+  for(const b of preview.budgets)insertBudget.run(closureId,b.id,b.category_name,b.label_name,b.limit_cents,b.spent_cents,Math.max(0,b.remaining_cents),Math.max(0,-b.remaining_cents));
   db.exec('COMMIT');
   return {lastInsertRowid:closureId};
  }catch(e){db.exec('ROLLBACK');throw e;}
