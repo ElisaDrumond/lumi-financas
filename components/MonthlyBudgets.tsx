@@ -2,7 +2,8 @@
 import {useMemo,useState} from 'react';
 import {Check,ChevronRight,Pencil,Plus,RotateCcw,Pause,Play,Trash2,Wallet} from 'lucide-react';
 import MoneyInput from './MoneyInput';
-import {categoryBudgetSummary,type BudgetData} from '@/lib/budgets';
+import {categoryBudgetSummary,monthlyBudgetImpact,type BudgetData} from '@/lib/budgets';
+import {planningSummary} from '@/lib/finance';
 import {useConfirm} from './ConfirmDialog';
 const money=(value:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value/100);
 const cents=(text:string)=>Math.round(Number(text.replace(',','.'))*100);
@@ -23,6 +24,8 @@ export default function MonthlyBudgets({data,period,account,refresh}:Props){
  const paused=(data.categoryBudgets??[]).filter(b=>b.status==='paused');
  const totalLimit=summary.reduce((s,x)=>s+x.limit_cents,0);
  const totalSpent=summary.reduce((s,x)=>s+x.spent_cents,0);
+ const impact=useMemo(()=>monthlyBudgetImpact(data,period),[data,period]);
+ const projected=useMemo(()=>planningSummary(data,period,''),[data,period]);
  const openCreate=()=>{setEditing('create');setCategoryId(choices[0]?String(choices[0].id):'');setLabelName('');setBudgetId(null);setAmount('');setError('');setExpanded(true);};
  const openEdit=(id:number,scope:'month'|'default')=>{
   const row=(data.categoryBudgets??[]).find(b=>Number(b.id)===id);
@@ -59,7 +62,7 @@ export default function MonthlyBudgets({data,period,account,refresh}:Props){
   </div>
   {expanded&&<div className="monthly-budgets-body">
    {error&&<p className="error" role="alert">{error}</p>}
-   <p className="month-close-hint">Cada limite vale por mês desde o mês inicial. Cada subcategoria reúne apenas as despesas identificadas com ela; gastos sem subcategoria entram em Geral. Os pagamentos somam todas as contas. Pagamentos parciais são contabilizados pelo valor pago. O limite não cria despesas nem altera o saldo.</p>
+   <p className="month-close-hint">Cada limite vale por mês desde o mês inicial. Cada subcategoria reúne apenas as despesas identificadas com ela; gastos sem subcategoria entram em Geral. Os pagamentos somam todas as contas. Pagamentos parciais são contabilizados pelo valor pago. A parte ainda não coberta dos limites entra nas saídas e reduz o saldo projetado, sem criar outra transação.</p>
    {editing&&<form className="monthly-budget-form" onSubmit={save}>
     <div className="monthly-budget-form-fields">
      {editing==='create'?<><label>Categoria<select required value={categoryId} onChange={e=>{setCategoryId(e.target.value);setLabelName('');}}><option value="">Selecione</option>{choices.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>Subcategoria (escreva ou escolha)<input required maxLength={80} list="budget-subcategory-options" value={labelName} onChange={e=>setLabelName(e.target.value)} placeholder="Ex.: Hortifruti, Mercado, Delivery"/><datalist id="budget-subcategory-options">{existingNames.map(name=><option key={name} value={name}/>)}</datalist></label></>:<div className="monthly-budget-form-label"><strong>{current?.category_name||'Orçamento'} · {current?.label_name||'Geral'}</strong><small>{editing==='month'? 'Alterar somente '+period.slice(5)+'/'+period.slice(0,4):'Alterar valor padrão dos próximos meses (sem substituir ajustes mensais)'}</small></div>}
@@ -67,7 +70,7 @@ export default function MonthlyBudgets({data,period,account,refresh}:Props){
     </div>
     <div className="monthly-budget-form-actions"><button className="soft-btn" type="button" onClick={()=>{setEditing(null);setError('');}}>Cancelar</button><button className="primary-btn" disabled={busy||editing==='create'&&(!categoryId||!labelName.trim())} type="submit"><Check size={15}/>{busy?'Salvando...':'Salvar orçamento'}</button></div>
    </form>}
-   {summary.length>0&&<div className="monthly-budget-totals"><div><small>Limites cadastrados</small><strong>{money(totalLimit)}</strong></div><div><small>Gastos realizados</small><strong>{money(totalSpent)}</strong></div><div><small>{totalLimit>=totalSpent?'Ainda disponível':'Acima do orçamento'}</small><strong className={totalSpent>totalLimit?'budget-over':'budget-ok'}>{money(Math.abs(totalLimit-totalSpent))}</strong></div></div>}
+   {summary.length>0&&<div className="monthly-budget-totals"><div><small>Limites cadastrados</small><strong>{money(totalLimit)}</strong></div><div><small>Gastos realizados</small><strong>{money(totalSpent)}</strong></div><div><small>{totalLimit>=totalSpent?'Ainda disponível':'Acima do orçamento'}</small><strong className={totalSpent>totalLimit?'budget-over':'budget-ok'}>{money(Math.abs(totalLimit-totalSpent))}</strong></div><div className="monthly-budget-impact-card"><small>Saída total prevista</small><strong>{money(projected.expense)}</strong><span>Já previsto: {money(projected.expenseAlreadyScheduled)} + reserva adicional dos orçamentos: {money(impact.additional_cents)}</span></div></div>}
    <div className="monthly-budget-grid">{summary.map(item=>{
     const progress=Math.min(100,Math.max(0,item.percentage));
     const nearLimit=item.percentage>=80&&!item.over_limit;
