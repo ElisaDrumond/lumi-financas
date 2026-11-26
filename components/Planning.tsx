@@ -12,10 +12,11 @@ import SortSelector from './SortSelector';
 import {sortRecords,type SortKey} from '@/lib/sort';
 import {useConfirm} from './ConfirmDialog';
 import {planningSummary,carryoverItems,expenseByCategory,sameAccount,FinanceData,type CarryoverItem} from '@/lib/finance';
+import {scheduledObligations,unplannedObligations} from '@/lib/obligation-plans';
 import {useMemo,useState} from 'react';
 import {Plus,Check,Edit2,Pause,Play,OctagonX,CalendarClock,RefreshCw,ChevronRight} from 'lucide-react';
 type Row=Record<string,any>;
-type Props={data:FinanceData&{accounts:Row[],categories:Row[],recurrings:Row[],occurrences:Row[],payments:Row[],invoicePayments:Row[],transactions:Row[],installments:Row[],purchases:Row[],monthClosures:Row[],monthClosureAccounts:Row[],monthClosurePending:Row[],monthClosureBudgets:Row[],categoryBudgets:Row[],categoryBudgetMonths:Row[],budgetLabels:Row[]},refresh:(period?:string)=>Promise<void>};
+type Props={data:FinanceData&{accounts:Row[],categories:Row[],recurrings:Row[],occurrences:Row[],payments:Row[],invoicePayments:Row[],obligationPlans:Row[],transactions:Row[],installments:Row[],purchases:Row[],monthClosures:Row[],monthClosureAccounts:Row[],monthClosurePending:Row[],monthClosureBudgets:Row[],categoryBudgets:Row[],categoryBudgetMonths:Row[],budgetLabels:Row[]},refresh:(period?:string)=>Promise<void>};
 const money=(n:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format((n||0)/100);
 const iso=()=>new Date().toLocaleDateString('en-CA');
 const toCents=(v:string)=>Math.round(Number(v.replace(',','.'))*100);
@@ -71,6 +72,8 @@ export default function Planning({data,refresh}:Props){
  const expenseChart=useMemo(()=>expenseByCategory(data,period,account),[data,period,account]);
  const sums=useMemo(()=>planningSummary(data,period,account),[data,period,account]);
  const overdue=useMemo(()=>carryoverItems(data,period,account),[data,period,account]);
+ const scheduled=useMemo(()=>scheduledObligations(data,period,account).filter(x=>typeFilter==='all'||x.type===typeFilter),[data,period,account,typeFilter]);
+ const backlog=useMemo(()=>unplannedObligations(data,period,account).filter(x=>x.status==='archived'||x.status==='unscheduled').filter(x=>typeFilter==='all'||x.type===typeFilter),[data,period,account,typeFilter]);
  const carried=useMemo(()=>overdue.filter(x=>x.type==='expense'&&typeMatches(x)),[overdue,typeFilter]);
  const overdueReceipts=useMemo(()=>overdue.filter(x=>x.type==='income'&&typeMatches(x)),[overdue,typeFilter]);
  const installments=useMemo(()=>typeFilter==='income'?[]:data.installments.filter(i=>i.method!=='card'&&i.due_on.startsWith(period)&& (account===''||Number(i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id)===Number(account))),[data,period,account,typeFilter]);
@@ -94,6 +97,16 @@ export default function Planning({data,refresh}:Props){
    <CardInvoices data={data} period={period} account={account} refresh={refresh}/>
    <MonthClosing period={period} refresh={refresh} closures={data.monthClosures||[]} closureAccounts={data.monthClosureAccounts||[]} closurePending={data.monthClosurePending||[]} closureBudgets={data.monthClosureBudgets||[]}/>
    <ExpenseCategoryChart items={expenseChart} period={period}/>
+   <details className="planning-fold" open>
+    {sectionTitle('Reprogramadas para este mês',scheduled.length)}
+    <div className="planning-fold-body"><p className="footnote">Valores previstos para {period.slice(5)}/{period.slice(0,4)}, com vencimento original preservado. Não são pagamentos realizados.</p>
+     {scheduled.length?<div className="carryover-list">{scheduled.map(item=><div className="carryover-row" key={item.kind+'-'+item.id}><div className="carryover-info"><strong>{item.description}</strong><small>{item.type==='income'?'A receber':'A pagar'} · Vencimento original: {new Date(item.due_on+'T12:00:00').toLocaleDateString('pt-BR')} · Previsto para {period.slice(5)}/{period.slice(0,4)}</small></div><div className="carryover-side"><strong>{money(item.remaining_cents)}</strong><span className="status pending">Reprogramada</span>{item.kind!=='invoice'&&<button type="button" className="small-btn" onClick={()=>launchCarryover({...item,key:item.kind+'-'+item.id,goal:false,account_name:data.accounts.find(a=>Number(a.id)===Number(item.account_id))?.name??'Conta não definida',amount_cents:item.remaining_cents,paid_cents:0})}><Check size={13}/>{item.type==='income'?'Receber':'Pagar'}</button>}</div></div>)}</div>:<p className="carryover-empty">Nenhuma pendência reprogramada para este mês.</p>}
+    </div>
+   </details>
+   {backlog.length>0&&<details className="planning-fold"><summary className="planning-fold-head"><span className="planning-fold-toggle"><ChevronRight size={17}/></span><strong>Histórico · sem previsão ou arquivadas</strong><span className="pill">{backlog.length}</span></summary>
+     <div className="planning-fold-body"><p className="footnote">Essas obrigações continuam registradas, mas não entram nas previsões deste mês. Arquivar não significa pagar ou perdoar uma dívida.</p><div className="carryover-list">{backlog.map(item=><div className="carryover-row" key={item.kind+'-'+item.id}><div className="carryover-info"><strong>{item.description}</strong><small>Vencimento original {new Date(item.due_on+'T12:00:00').toLocaleDateString('pt-BR')} · {item.status==='archived'?'Arquivada':'Sem mês previsto'}</small></div><strong>{money(item.remaining_cents)}</strong></div>)}</div></div>
+    </details>}
+
    <details className="planning-fold" open>
     {sectionTitle('Pendências anteriores',carried.length)}
     <div className="planning-fold-body"><p className="footnote">Despesas não quitadas de meses anteriores. Vencimento e competência originais preservados; os valores já compõem a projeção do mês em que venceram.</p>
