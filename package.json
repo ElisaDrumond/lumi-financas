@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "test": "tsc lib/db.ts lib/data.ts lib/goals.ts lib/recurrings.ts lib/finance.ts lib/sort.ts lib/closing.ts lib/budgets.ts lib/category-colors.ts lib/invoices.ts --outDir .test-build --module commonjs --target es2020 --esModuleInterop --skipLibCheck && node --test tests/finance.cjs"
+    "test": "tsc lib/db.ts lib/data.ts lib/goals.ts lib/recurrings.ts lib/finance.ts lib/sort.ts lib/closing.ts lib/budgets.ts lib/category-colors.ts lib/invoices.ts lib/due-items.ts lib/card-cycle.ts --outDir .test-build --module commonjs --target es2020 --esModuleInterop --skipLibCheck && node --test tests/finance.cjs"
   },
   "dependencies": {
     "next": "16.4.6",

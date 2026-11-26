@@ -801,3 +801,46 @@ test('compra no dia do fechamento entra na próxima fatura (dia anterior, fecham
  const invoice=readAll('2026-12').installments.find(i=>i.purchase_id===purchase);
  assert.equal(invoice.due_on,'2026-12-20');
 });
+
+test('dashboard exibe uma fatura por cartão e mês, não compras individuais',()=>{
+ const {dashboardDueItems}=require('../.test-build/due-items');
+ const {cardInvoices}=require('../.test-build/invoices');
+ const current=shifted(50),next=shifted(51);
+ const account=add('accounts',{name:'Conta painel de faturas',initial_balance:100000});
+ const card=add('cards',{name:'Picpay agrupamento',limit_cents:80000,closing_day:14,due_day:20,account_id:account});
+ add('purchases',{description:'Uber antigo',method:'card',card_id:card,total_cents:1095,installments_count:1,purchased_on:current+'-16',first_due_on:current+'-20'});
+ add('purchases',{description:'Outros antigo',method:'card',card_id:card,total_cents:1889,installments_count:1,purchased_on:current+'-17',first_due_on:current+'-20'});
+ const before=readAll(next);
+ const initial=dashboardDueItems(before,current+'-25');
+ assert.equal(initial.overdue.filter(x=>x.kind==='invoice'&&x.description==='Fatura Picpay agrupamento').length,1);
+ assert.equal(initial.overdue.find(x=>x.kind==='invoice'&&x.description==='Fatura Picpay agrupamento').value,2984);
+ assert.equal(initial.overdue.some(x=>x.description==='Uber antigo'||x.description==='Outros antigo'),false);
+ const recalculated=updateDb('card-cycle-recalculate',{card_id:card});
+ assert.equal(Number(recalculated.lastInsertRowid),2);
+ const after=readAll(next);
+ assert.equal(cardInvoices(after).filter(x=>x.card_id===card).length,1);
+ const invoice=cardInvoices(after).find(x=>x.card_id===card);
+ assert.equal(invoice.due_on,next+'-20');
+ assert.equal(invoice.total_cents,2984);
+ assert.equal(cardInvoices(after).some(x=>x.card_id===card&&x.period===current),false);
+ const list=dashboardDueItems(after,current+'-25');
+ assert.equal(list.overdue.some(x=>x.kind==='invoice'&&x.card_id===card),false);
+ assert.equal(list.overdue.some(x=>x.description==='Fatura Picpay agrupamento'),false);
+ assert.equal(list.upcoming.some(x=>x.description==='Fatura Picpay agrupamento'&&x.due_on===next+'-20'),true);
+ assert.equal(accountBalance(after,account),100000);
+ assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+test('recalcular fatura não altera compras com pagamentos já registrados',()=>{
+ const {cardInvoices}=require('../.test-build/invoices');
+ const month=shifted(53),next=shifted(54);
+ const account=add('accounts',{name:'Conta fatura protegida',initial_balance:100000});
+ const card=add('cards',{name:'Cartão fatura protegida',limit_cents:50000,closing_day:14,due_day:20,account_id:account});
+ const purchase=add('purchases',{description:'Compra protegida no crédito',method:'card',card_id:card,total_cents:20000,installments_count:1,purchased_on:month+'-16',first_due_on:month+'-20'});
+ add('invoice-payment',{card_id:card,period:month,amount_cents:5000,paid_on:month+'-20',account_id:account,request_key:key()});
+ const recalculated=updateDb('card-cycle-recalculate',{card_id:card});
+ assert.equal(Number(recalculated.lastInsertRowid),0);
+ const state=readAll(next);
+ assert.equal(state.installments.find(i=>i.purchase_id===purchase).due_on,month+'-20');
+ assert.equal(cardInvoices(state).find(i=>i.card_id===card).remaining_cents,15000);
+ assert.equal(accountBalance(state,account),95000);
+});
