@@ -228,6 +228,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
     const available=existing.limit_cents-cardCommitment(readAll(first.slice(0,7)),Number(card));
     if(total>available)throw Error('Limite insuficiente: disponível '+new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(available/100)+'.');
    }
+   if(method==='card'&&first<purchased)throw Error('A primeira fatura não pode vencer antes da compra.');
    const due=new Date(first+'T12:00:00Z');const dueDay=due.getUTCDate();
    db.exec('BEGIN IMMEDIATE');
    try{
@@ -338,10 +339,19 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const oldDue=db.prepare('SELECT due_on FROM installments WHERE id=?').get(installmentId) as {due_on:string}|undefined;if(oldDue)ensureOpen(oldDue.due_on);
    db.exec('BEGIN IMMEDIATE');
    try {
-    const current=db.prepare('SELECT id,purchase_id,paid_on FROM installments WHERE id=?').get(installmentId) as {id:number;purchase_id:number;paid_on:string|null}|undefined;
+    const current=db.prepare('SELECT id,purchase_id,paid_on,amount_cents FROM installments WHERE id=?').get(installmentId) as {id:number;purchase_id:number;paid_on:string|null;amount_cents:number}|undefined;
     if(!current)throw Error('Parcela não encontrada.');
     if(db.prepare("SELECT 1 FROM installments i JOIN purchases p ON p.id=i.purchase_id JOIN invoice_payments ip ON ip.card_id=p.card_id AND ip.period=substr(i.due_on,1,7) WHERE i.id=? LIMIT 1").get(installmentId))throw Error('A fatura desta parcela já possui pagamento. Preserve o histórico financeiro.');
     if(current.paid_on||db.prepare('SELECT 1 FROM payment_records WHERE installment_id=? LIMIT 1').get(installmentId))throw Error('Não é possível editar uma parcela com pagamentos registrados. O histórico financeiro está protegido.');
+    const purchase=db.prepare('SELECT method,card_id FROM purchases WHERE id=?').get(current.purchase_id) as {method:string;card_id:number|null};
+    if(purchase.method==='card'){
+     if(db.prepare('SELECT 1 FROM invoice_payments WHERE card_id=? AND period=? LIMIT 1').get(purchase.card_id,due.slice(0,7)))throw Error('A fatura de destino já possui pagamento registrado.');
+     if(amount>current.amount_cents){
+      const card=db.prepare('SELECT limit_cents FROM cards WHERE id=?').get(purchase.card_id) as {limit_cents:number};
+      const available=card.limit_cents-cardCommitment(readAll(due.slice(0,7)),Number(purchase.card_id));
+      if(amount-current.amount_cents>available)throw Error('Esta edição ultrapassaria o limite disponível do cartão.');
+     }
+    }
     run('UPDATE installments SET amount_cents=?,due_on=? WHERE id=?',amount,due,installmentId);
     const total=db.prepare('SELECT SUM(amount_cents) AS total FROM installments WHERE purchase_id=?').get(current.purchase_id) as {total:number};
     if(!Number.isSafeInteger(total.total)||total.total<=0)throw Error('Total da compra inválido.');
