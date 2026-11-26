@@ -194,9 +194,9 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
   case 'invoice-payment': {
    const cardId=id(payload.card_id),period=budgetPeriod(payload.period),amount=positive(payload.amount_cents),
     account=id(payload.account_id),paid=date(payload.paid_on),requestKey=text(payload.request_key);
-   ensureOpen(paid);
    const previous=db.prepare('SELECT id FROM invoice_payments WHERE request_key=?').get(requestKey) as {id:number}|undefined;
    if(previous)return {lastInsertRowid:previous.id};
+   ensureOpen(paid);
    const ledger=readAll(period);
    const invoice=cardInvoices(ledger).find(i=>i.card_id===cardId&&i.period===period);
    if(!invoice||!invoice.remaining_cents)throw Error('A fatura não existe ou já está paga.');
@@ -218,6 +218,11 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    if(count<1||count>120||count>total)throw Error('Quantidade de parcelas inválida.');
    const first=date(payload.first_due_on), purchased=date(payload.purchased_on);ensureOpen(first);ensureOpen(purchased);
    if(method==='card'){
+    for(let j=0;j<count;j++){
+     const dateOfInvoice=new Date(Date.UTC(Number(first.slice(0,4)),Number(first.slice(5))-1+j,1)).toISOString().slice(0,7);
+     if(db.prepare('SELECT 1 FROM invoice_payments WHERE card_id=? AND period=? LIMIT 1').get(card,dateOfInvoice))throw Error('Há fatura com pagamento registrado neste período. Não é possível incluir parcelas retroativas nela.');
+     ensureOpen(dateOfInvoice+'-01');
+    }
     const existing=db.prepare('SELECT id,limit_cents FROM cards WHERE id=?').get(card) as {id:number;limit_cents:number}|undefined;
     if(!existing)throw Error('Cartão não encontrado.');
     const available=existing.limit_cents-cardCommitment(readAll(first.slice(0,7)),Number(card));
@@ -335,6 +340,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    try {
     const current=db.prepare('SELECT id,purchase_id,paid_on FROM installments WHERE id=?').get(installmentId) as {id:number;purchase_id:number;paid_on:string|null}|undefined;
     if(!current)throw Error('Parcela não encontrada.');
+    if(db.prepare("SELECT 1 FROM installments i JOIN purchases p ON p.id=i.purchase_id JOIN invoice_payments ip ON ip.card_id=p.card_id AND ip.period=substr(i.due_on,1,7) WHERE i.id=? LIMIT 1").get(installmentId))throw Error('A fatura desta parcela já possui pagamento. Preserve o histórico financeiro.');
     if(current.paid_on||db.prepare('SELECT 1 FROM payment_records WHERE installment_id=? LIMIT 1').get(installmentId))throw Error('Não é possível editar uma parcela com pagamentos registrados. O histórico financeiro está protegido.');
     run('UPDATE installments SET amount_cents=?,due_on=? WHERE id=?',amount,due,installmentId);
     const total=db.prepare('SELECT SUM(amount_cents) AS total FROM installments WHERE purchase_id=?').get(current.purchase_id) as {total:number};
