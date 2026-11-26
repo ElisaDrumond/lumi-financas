@@ -1,6 +1,7 @@
 ﻿export type Row=Record<string,any>;
 import {monthlyBudgetImpact} from './budgets';
-export type FinanceData={accounts:Row[],transactions:Row[],installments:Row[],payments:Row[],occurrences:Row[],adjustments:Row[],goals:Row[],goalMovements:Row[],transactionPayments?:Row[],cards?:Row[]};
+import {cardInvoices} from './invoices';
+export type FinanceData={accounts:Row[],transactions:Row[],installments:Row[],payments:Row[],occurrences:Row[],adjustments:Row[],goals:Row[],goalMovements:Row[],transactionPayments?:Row[],invoicePayments?:Row[],purchases?:Row[],cards?:Row[]};
 export const sameAccount=(row:Row,account:string|number='')=>account===''||Number(row.account_id)===Number(account);
 export function accountBalance(data:FinanceData,account:string|number=''){
  const belongs=(r:Row)=>sameAccount(r,account);
@@ -10,6 +11,7 @@ export function accountBalance(data:FinanceData,account:string|number=''){
  +sum((data.transactionPayments??[]).map(p=>({...p,type:data.transactions.find(t=>t.id===p.transaction_id)?.type})),p=>(p.type==='income'?1:-1)*p.amount_cents)
  -sum(data.installments.filter(i=>i.paid_on&&!data.payments.some(p=>p.installment_id===i.id)),i=>i.amount_cents)
  +sum(data.payments,p=>(p.occurrence_id&&data.occurrences.find(o=>o.id===p.occurrence_id)?.type==='income'?1:-1)*p.amount_cents)
+ -sum(data.invoicePayments??[],p=>p.amount_cents)
  +sum(data.adjustments,a=>a.amount_cents)
  +sum(data.goalMovements,m=>(m.direction==='deposit'?-1:1)*m.amount_cents);
 }
@@ -35,6 +37,7 @@ export function accountBalanceThrough(data:FinanceData,through:string,account:st
  for(const i of data.installments){
   if(i.paid_on&&i.paid_on<=through&&!data.payments.some(p=>p.installment_id===i.id)&&belongs(i.account_id))total-=i.amount_cents;
  }
+ for(const p of data.invoicePayments??[])if(p.paid_on<=through&&belongs(p.account_id))total-=p.amount_cents;
  for(const a of data.adjustments)if(a.adjusted_on<=through&&belongs(a.account_id))total+=a.amount_cents;
  for(const m of data.goalMovements)if(m.moved_on<=through&&belongs(m.account_id))total+=(m.direction==='deposit'?-1:1)*m.amount_cents;
  return total;
@@ -48,6 +51,7 @@ export function cashFlowForMonth(data:FinanceData,period:string,account:string|n
  for(const p of data.transactionPayments??[])if(relevant(p.account_id)&&p.paid_on.startsWith(period))add(data.transactions.find(t=>t.id===p.transaction_id)?.type||'expense',p.amount_cents);
  for(const p of data.payments)if(relevant(p.account_id)&&p.paid_on.startsWith(period))add(data.occurrences.find(o=>o.id===p.occurrence_id)?.type||'expense',p.amount_cents);
  for(const i of data.installments)if(i.paid_on?.startsWith(period)&&relevant(i.account_id)&&!data.payments.some(p=>p.installment_id===i.id))spent+=i.amount_cents;
+ for(const p of data.invoicePayments??[])if(relevant(p.account_id)&&p.paid_on.startsWith(period))spent+=p.amount_cents;
  return {received,spent};
 }
 export type CarryoverItem={key:string;kind:'occurrence'|'transaction'|'installment';id:number;description:string;type:'income'|'expense';goal:boolean;goal_id?:number|null;due_on:string;account_id:number|null;account_name:string;amount_cents:number;paid_cents:number;remaining_cents:number};
@@ -69,8 +73,9 @@ export function carryoverItems(data:FinanceData,period:string,account:string|num
   const remaining=Math.max(0,t.amount_cents-paid);
   if(remaining)result.push({key:'transaction-'+t.id,kind:'transaction',id:t.id,description:t.description,type:t.type,goal:false,due_on:t.date,account_id:t.account_id,account_name:accountName(t.account_id),amount_cents:t.amount_cents,paid_cents:paid,remaining_cents:remaining});
  }
+ const cardPurchaseIds=new Set((data.purchases??[]).filter(p=>p.method==='card').map(p=>Number(p.id)));
  for(const i of data.installments){
-  if(i.paid_on||i.due_on>=period+'-01')continue;
+  if(cardPurchaseIds.has(Number(i.purchase_id))||i.paid_on||i.due_on>=period+'-01')continue;
   const owner=i.account_id??cardAccount(i.card_id)??data.payments.find(p=>p.installment_id===i.id)?.account_id??null;
   if(!relevant(owner))continue;
   const paid=data.payments.filter(p=>p.installment_id===i.id).reduce((s,p)=>s+p.amount_cents,0);
@@ -98,12 +103,19 @@ export function monthlyForecast(data:FinanceData,period:string,account:string|nu
   const value=t.status==='completed'?(paid||t.actual_cents||t.amount_cents):t.amount_cents;
   if(t.type==='income')income+=value;else expense+=value;
  }
+ const cardPurchaseIds=new Set((data.purchases??[]).filter(p=>p.method==='card').map(p=>Number(p.id)));
  for(const i of data.installments){
-  if(!i.due_on.startsWith(period))continue;
+  if(cardPurchaseIds.has(Number(i.purchase_id))||!i.due_on.startsWith(period))continue;
   const owner=i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id;
   if(account!==''&&Number(owner)!==Number(account))continue;
   const paid=amountPaid(i.id,'installment');
   expense+=i.paid_on&&paid>0?paid:i.amount_cents;
+ }
+ // The generated card statement replaces underlying card installments in cash forecasts.
+ for(const invoice of cardInvoices(data)){
+  if(invoice.period!==period)continue;
+  if(account!==''&&Number(invoice.account_id)!==Number(account))continue;
+  expense+=invoice.total_cents;
  }
  // Contributions attached to planned occurrences are already part of reserves.
  for(const m of data.goalMovements){
@@ -141,6 +153,10 @@ export function oldSettlementFlow(data:FinanceData,period:string,closedThrough:s
  }
  for(const i of data.installments){
   if(match(i.due_on)&&i.paid_on&&paidMonth(i.paid_on)&&owner(i.account_id)&&!data.payments.some(p=>p.installment_id===i.id))expense+=i.amount_cents;
+ }
+ for(const p of data.invoicePayments??[]){
+  if(!paidMonth(p.paid_on)||!owner(p.account_id)||p.period>closedThrough)continue;
+  expense+=p.amount_cents;
  }
  for(const m of data.goalMovements){
   const o=data.occurrences.find(o=>o.id===m.occurrence_id);
@@ -193,14 +209,16 @@ export function planningSummary(data:FinanceData,period:string,account:string|nu
  +data.payments.filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)).reduce((s,p)=>{const o=data.occurrences.find(o=>o.id===p.occurrence_id);return s+((o?.type||'expense')===type?p.amount_cents:0)},0)
  +(type==='expense'?data.installments.filter(i=>i.paid_on?.startsWith(period)&&sameAccount(i,account)&&!data.payments.some(p=>p.installment_id===i.id)).reduce((s,i)=>s+i.amount_cents,0):0);
  const goalOut=data.goalMovements.filter(m=>m.moved_on.startsWith(period)&&sameAccount(m,account)).reduce((s,m)=>s+(m.direction==='deposit'?1:-1)*m.amount_cents,0);
- const pendingInstallments=data.installments.filter(i=>!i.paid_on&&i.due_on.startsWith(period)&&sameAccount({...i,account_id:i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id},account)).reduce((s,i)=>s+Math.max(0,i.amount_cents-data.payments.filter(p=>p.installment_id===i.id).reduce((v,p)=>v+p.amount_cents,0)),0);
+ const cardPurchaseIds=new Set((data.purchases??[]).filter(p=>p.method==='card').map(p=>Number(p.id)));
+ const invoiceToPay=cardInvoices(data).filter(i=>i.period===period&&(account===''||Number(i.account_id)===Number(account))).reduce((s,i)=>s+i.remaining_cents,0);
+ const pendingInstallments=data.installments.filter(i=>!cardPurchaseIds.has(Number(i.purchase_id))&&!i.paid_on&&i.due_on.startsWith(period)&&sameAccount({...i,account_id:i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id},account)).reduce((s,i)=>s+Math.max(0,i.amount_cents-data.payments.filter(p=>p.installment_id===i.id).reduce((v,p)=>v+p.amount_cents,0)),0);
  const transactionDue=(t:Row)=>Math.max(0,t.amount_cents-(data.transactionPayments??[]).filter(p=>p.transaction_id===t.id).reduce((s,p)=>s+p.amount_cents,0));
  const pendingAvulsos=(type:string)=>data.transactions.filter(t=>t.status==='planned'&&t.type===type&&t.date.startsWith(period)&&sameAccount(t,account)).reduce((s,t)=>s+transactionDue(t),0);
  const carryover=carryoverItems(data,period,account);
  const outstandingExpenses=carryover.filter(x=>x.type==='expense'&&!x.goal).reduce((s,x)=>s+x.remaining_cents,0);
  const outstandingIncome=carryover.filter(x=>x.type==='income').reduce((s,x)=>s+x.remaining_cents,0);
  const toGoals=sum('expense',true,true);
- const toPay=sum('expense',true)+pendingInstallments+pendingAvulsos('expense');
+ const toPay=sum('expense',true)+pendingInstallments+pendingAvulsos('expense')+invoiceToPay;
  const toReceive=sum('income',true)+pendingAvulsos('income');
  const monthly=monthlyForecast(data,period,account);
  const openingBalance=forecastOpening(data,period,account);
