@@ -874,3 +874,31 @@ test('editar compra e excluir parcelamento não pago preserva saldo, limite e hi
  assert.throws(()=>updateDb('purchase-edit',{id:kept,description:'Não pode',purchased_on:month+'-06'}),/histórico está protegido/);
  assert.equal(cardInvoices(readAll(month)).find(i=>i.card_id===card&&i.period===month).remaining_cents,8000);
 });
+
+test('parcelamentos ordenam pelo mês do próximo vencimento e distinguem concluídos por pagamento real',()=>{
+ const {purchaseViews,filterAndSortPurchases}=require('../.test-build/purchase-view');
+ const month=shifted(65),next=shifted(66),last=shifted(67);
+ const account=add('accounts',{name:'Conta filtro conclusão',initial_balance:500000});
+ const card=add('cards',{name:'Cartão filtro conclusão',limit_cents:150000,closing_day:10,due_day:20,account_id:account});
+ const boleto=add('purchases',{description:'Boleto anterior com parcela próxima',method:'boleto',total_cents:20000,installments_count:2,purchased_on:month+'-01',first_due_on:next+'-10'});
+ const credit=add('purchases',{description:'Crédito ainda aberto',method:'card',card_id:card,total_cents:30000,installments_count:1,purchased_on:month+'-02',first_due_on:month+'-20'});
+ const done=add('purchases',{description:'Boleto concluído',method:'boleto',total_cents:5000,installments_count:1,purchased_on:month+'-02',first_due_on:month+'-15'});
+ const donePart=readAll(month).installments.find(i=>i.purchase_id===done);
+ add('record-payment',{kind:'installment',id:donePart.id,amount_cents:5000,paid_on:month+'-16',account_id:account,settled:true});
+ let data=readAll(last);
+ let views=purchaseViews(data);
+ assert.equal(views.get(done).completed,true);
+ assert.equal(views.get(credit).completed,false);
+ assert.equal(views.get(boleto).referenceMonth,next);
+ assert.deepEqual(filterAndSortPurchases(data.purchases,views,'all','open','date-asc').map(p=>p.id),[credit,boleto]);
+ assert.deepEqual(filterAndSortPurchases(data.purchases,views,'other','completed','date-desc').map(p=>p.id),[done]);
+ assert.deepEqual(filterAndSortPurchases(data.purchases,views,'card','all','date-asc').map(p=>p.id),[credit]);
+ add('invoice-payment',{card_id:card,period:month,amount_cents:10000,paid_on:month+'-20',account_id:account,request_key:key()});
+ data=readAll(last);views=purchaseViews(data);
+ assert.equal(views.get(credit).completed,false,'pagamento parcial não quita compra');
+ add('invoice-payment',{card_id:card,period:month,amount_cents:20000,paid_on:month+'-20',account_id:account,request_key:key()});
+ data=readAll(last);views=purchaseViews(data);
+ assert.equal(views.get(credit).completed,true);
+ assert.equal(filterAndSortPurchases(data.purchases,views,'card','open','date-asc').length,0);
+ assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
