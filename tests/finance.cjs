@@ -717,3 +717,16 @@ test('fechamento inclui fatura não paga e pagamento posterior reduz caixa do m�
  assert.equal(cashFlowForMonth(state,next,account).spent,20000);
  reopenMonth(old);
 });
+
+test('parcelas no cartão atravessam dezembro sem datas inválidas',()=>{
+ const {cardInvoices}=require('../.test-build/invoices');
+ const year=Number(shifted(34).slice(0,4))+1;
+ const bought=(year-1)+'-12';
+ const account=add('accounts',{name:'Conta teste virada fatura',initial_balance:100000});
+ const card=add('cards',{name:'Cartão teste virada ano',limit_cents:90000,closing_day:10,due_day:17,account_id:account});
+ const purchase=add('purchases',{description:'Compra três parcelas entre anos',method:'card',card_id:card,total_cents:30000,installments_count:3,purchased_on:bought+'-12',first_due_on:year+'-01-17'});
+ const state=readAll(year+'-03');
+ const parts=state.installments.filter(i=>i.purchase_id===purchase).sort((a,b)=>a.number-b.number);
+ assert.deepEqual(parts.map(i=>i.due_on),[year+'-01-17',year+'-02-17',year+'-03-17']);
+ assert.deepEqual(cardInvoices(state).filter(i=>i.card_id===card).map(i=>i.period),[year+'-01',year+'-02',year+'-03']);
+});

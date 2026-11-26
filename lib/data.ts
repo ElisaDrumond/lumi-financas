@@ -220,7 +220,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const first=date(payload.first_due_on), purchased=date(payload.purchased_on);ensureOpen(first);ensureOpen(purchased);
    if(method==='card'){
     for(let j=0;j<count;j++){
-     const dateOfInvoice=new Date(Date.UTC(Number(first.slice(0,4)),Number(first.slice(5))-1+j,1)).toISOString().slice(0,7);
+     const dateOfInvoice=new Date(Date.UTC(Number(first.slice(0,4)),Number(first.slice(5,7))-1+j,1)).toISOString().slice(0,7);
      if(db.prepare('SELECT 1 FROM invoice_payments WHERE card_id=? AND period=? LIMIT 1').get(card,dateOfInvoice))throw Error('Há fatura com pagamento registrado neste período. Não é possível incluir parcelas retroativas nela.');
      ensureOpen(dateOfInvoice+'-01');
     }
