@@ -1,6 +1,7 @@
 import {goalMovement} from './goals';
 import db from './db';
 import {ensureOccurrences, monthsAroundNow,forecastMonthsThrough,dateForPeriod} from './recurrings';
+import {cardInvoices,cardCommitment,firstCardDueOn} from './invoices';
 export type Entity = 'accounts' | 'categories' | 'cards' | 'transactions' | 'purchases' | 'installments' | 'goals';
 export function readAll(period?:string) {
  if(period&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))throw Error('Mes invalido.');
@@ -20,6 +21,7 @@ export function readAll(period?:string) {
   recurrings: query('SELECT r.*,a.name AS account_name,c.name AS category_name FROM recurrings r JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=r.category_id ORDER BY r.id DESC'),
   occurrences: query(`SELECT o.*,r.description,r.type,r.behavior,r.goal_id,r.account_id,r.budget_label_id,r.amount_cents AS base_amount_cents,a.name AS account_name,c.name AS category_name,COALESCE((SELECT SUM(p.amount_cents) FROM payment_records p WHERE p.occurrence_id=o.id),0) AS paid_cents FROM recurring_occurrences o JOIN recurrings r ON r.id=o.recurring_id JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=o.category_id ORDER BY o.due_on ASC`),
   payments: query('SELECT * FROM payment_records ORDER BY paid_on DESC'),
+  invoicePayments: query('SELECT * FROM invoice_payments ORDER BY paid_on DESC,id DESC'),
   transactionPayments: query('SELECT * FROM transaction_payments ORDER BY paid_on DESC,id DESC'),
   adjustments: query('SELECT * FROM balance_adjustments ORDER BY adjusted_on DESC'),
   monthClosures: query('SELECT * FROM month_closures ORDER BY period DESC'),
@@ -128,6 +130,10 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
   }
   case 'cards': {const closing=integer(payload.closing_day),due=integer(payload.due_day);if(closing<1||closing>28||due<1||due>28)throw Error('Use dias de 1 a 28.');return run('INSERT INTO cards(name,limit_cents,closing_day,due_day,color,account_id) VALUES(?,?,?,?,?,?)',text(payload.name),integer(payload.limit_cents??0),closing,due,name(payload.color)||'#a48bf5',id(payload.account_id,false));}
   case 'transactions': {
+   if(name(payload.payment_method)==='credit'){
+    if(name(payload.type)!=='expense')throw Error('Crédito é permitido apenas para despesas.');
+    return updateDb('credit-purchase',{description:payload.description,amount_cents:payload.amount_cents,date:payload.date,card_id:payload.card_id,category_id:payload.category_id,budget_label_name:payload.budget_label_name});
+   }
    const type=name(payload.type),status=name(payload.status)||'completed';
    if(!['income','expense'].includes(type)||!['planned','completed'].includes(status))throw Error('Tipo ou situação inválida.');
    const cat=id(payload.category_id,false);
@@ -185,12 +191,38 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    return run("UPDATE transactions SET status='completed',actual_cents=?,completed_on=? WHERE id=? AND status='planned'",actual,completed,target);
   }
   case 'goals': return run('INSERT INTO goals(name,target_cents,saved_cents,target_date,color) VALUES(?,?,?,?,?)',text(payload.name),positive(payload.target_cents),integer(payload.saved_cents??0),payload.target_date?date(payload.target_date):null,name(payload.color)||'#a48bf5');
+  case 'invoice-payment': {
+   const cardId=id(payload.card_id),period=budgetPeriod(payload.period),amount=positive(payload.amount_cents),
+    account=id(payload.account_id),paid=date(payload.paid_on),requestKey=text(payload.request_key);
+   ensureOpen(paid);
+   const previous=db.prepare('SELECT id FROM invoice_payments WHERE request_key=?').get(requestKey) as {id:number}|undefined;
+   if(previous)return {lastInsertRowid:previous.id};
+   const ledger=readAll(period);
+   const invoice=cardInvoices(ledger).find(i=>i.card_id===cardId&&i.period===period);
+   if(!invoice||!invoice.remaining_cents)throw Error('A fatura não existe ou já está paga.');
+   if(amount>invoice.remaining_cents)throw Error('O valor ultrapassa o saldo restante desta fatura.');
+   const result=run('INSERT INTO invoice_payments(card_id,period,amount_cents,paid_on,account_id,request_key) VALUES(?,?,?,?,?,?)',cardId,period,amount,paid,account,requestKey);
+   return result;
+  }
+  case 'credit-purchase': {
+   const cardId=id(payload.card_id),card=db.prepare('SELECT closing_day,due_day FROM cards WHERE id=?').get(cardId) as {closing_day:number;due_day:number}|undefined;
+   if(!card)throw Error('Cartão não encontrado.');
+   const purchased=date(payload.date),first=firstCardDueOn(purchased,card.closing_day,card.due_day);
+   const amount=positive(payload.amount_cents);
+   return updateDb('purchases',{description:payload.description,total_cents:amount,installments_count:1,method:'card',card_id:cardId,category_id:payload.category_id,budget_label_name:payload.budget_label_name,purchased_on:purchased,first_due_on:first});
+  }
   case 'purchases': {
    const method=name(payload.method);if(!['card','boleto'].includes(method))throw Error('Forma de pagamento inválida.');
    const card=method==='card'?id(payload.card_id):null;
    const count=integer(payload.installments_count),total=positive(payload.total_cents);
    if(count<1||count>120||count>total)throw Error('Quantidade de parcelas inválida.');
-   const first=date(payload.first_due_on), purchased=date(payload.purchased_on);ensureOpen(first);
+   const first=date(payload.first_due_on), purchased=date(payload.purchased_on);ensureOpen(first);ensureOpen(purchased);
+   if(method==='card'){
+    const existing=db.prepare('SELECT id,limit_cents FROM cards WHERE id=?').get(card) as {id:number;limit_cents:number}|undefined;
+    if(!existing)throw Error('Cartão não encontrado.');
+    const available=existing.limit_cents-cardCommitment(readAll(first.slice(0,7)),Number(card));
+    if(total>available)throw Error('Limite insuficiente: disponível '+new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(available/100)+'.');
+   }
    const due=new Date(first+'T12:00:00Z');const dueDay=due.getUTCDate();
    db.exec('BEGIN IMMEDIATE');
    try{
@@ -316,6 +348,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const full=payload.settled===true||payload.settled==='true';
    if(!['occurrence','installment'].includes(kind))throw Error('Tipo de pagamento inválido.');
    if(kind==='occurrence'&&db.prepare('SELECT r.goal_id FROM recurrings r JOIN recurring_occurrences o ON o.recurring_id=r.id WHERE o.id=?').get(target)?.goal_id)throw Error('Confirme este aporte pela operação de metas.');
+   if(kind==='installment'&&db.prepare("SELECT 1 FROM installments i JOIN purchases p ON p.id=i.purchase_id WHERE i.id=? AND p.method='card'").get(target))throw Error('Parcelas de cartão são quitadas pela fatura, na seção Cartões.');
    const table=kind==='occurrence'?'recurring_occurrences':'installments';
    const column=kind==='occurrence'?'occurrence_id':'installment_id';
    const record=db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(target) as {amount_cents:number;status?:string;paid_on?:string}|undefined;
@@ -339,6 +372,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
   case 'pay-installment': {
    const installment=id(payload.id), account=id(payload.account_id);ensureOpen(date(payload.paid_on));
    const record=db.prepare('SELECT paid_on FROM installments WHERE id=?').get(installment) as {paid_on:string|null}|undefined;
+   if(db.prepare("SELECT 1 FROM installments i JOIN purchases p ON p.id=i.purchase_id WHERE i.id=? AND p.method='card'").get(installment))throw Error('Pague as parcelas de cartão pela fatura.');
    if(!record)throw Error('Parcela não encontrada.');if(record.paid_on)throw Error('Parcela já paga.');
    return run('UPDATE installments SET paid_on=?,account_id=? WHERE id=? AND paid_on IS NULL',date(payload.paid_on),account,installment);
   }
@@ -355,6 +389,7 @@ export function removeDb(entity:string,idValue:number){
   if(row&&(closed(row.date.slice(0,7))||row.completed_on&&closed(row.completed_on.slice(0,7))))throw Error('Lançamento de mês fechado. Reabra antes de excluir.');
  }
  if(entity==='purchases'&&db.prepare('SELECT 1 FROM installments i JOIN month_closures m ON m.period=substr(i.due_on,1,7) WHERE i.purchase_id=? LIMIT 1').get(idValue))throw Error('Compra possui parcelas em mês fechado.');
+ if(entity==='purchases'&&db.prepare("SELECT 1 FROM purchases p JOIN invoice_payments ip ON ip.card_id=p.card_id JOIN installments i ON i.purchase_id=p.id AND substr(i.due_on,1,7)=ip.period WHERE p.id=? LIMIT 1").get(idValue))throw Error('Compra vinculada a fatura já paga.');
  if(entity==='recurrings'&&db.prepare('SELECT 1 FROM recurring_occurrences o JOIN month_closures m ON m.period=o.period WHERE o.recurring_id=? LIMIT 1').get(idValue))throw Error('Recorrência possui histórico em mês fechado.');
 
  return db.prepare(`DELETE FROM ${entity} WHERE id=?`).run(idValue);
