@@ -7,7 +7,7 @@ export type ObligationPlan={kind:PlanKind;record_id:number;status:PlanAction;tar
 export type PlanData=FinanceData&{obligationPlans?:Row[]};
 /** Stable key for an invoice. Existing closing snapshots use the same record ID. */
 export const invoiceRecordId=(cardId:number,period:string)=>cardId*1000000+Number(period.replace('-',''));
-export function obligationPlan(data:PlanData,kind:string,recordId:number):ObligationPlan|null{
+export function obligationPlan(data:{obligationPlans?:Row[]},kind:string,recordId:number):ObligationPlan|null{
  const p=(data.obligationPlans??[]).find(p=>p.kind===kind&&Number(p.record_id)===Number(recordId));
  return p?{kind:p.kind,record_id:Number(p.record_id),status:p.status,target_period:p.target_period??null,source_period:p.source_period}:null;
 }
