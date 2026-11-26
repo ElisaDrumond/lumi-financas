@@ -42,7 +42,7 @@ export default function Dashboard({initialData}:{initialData:Data}){
  const replan=(t:RecordData)=>confirm({title:'Marcar como prevista?',description:'O valor deixará de compor o saldo disponível até que você confirme o pagamento ou recebimento. Use para corrigir lançamentos antecipados.',confirmLabel:'Marcar como prevista',successMessage:'Lançamento movido para as previsões.',onConfirm:async()=>{const res=await fetch('/api/transaction-replan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:t.id})});const j=await res.json();if(!res.ok)throw Error(j.error||'Falha ao reclassificar.');await reload();}});
  const applyColors=()=>{
   if(!data.categories.length){setNotice('Cadastre uma categoria para começar a sortear cores.');return;}
-  const colors=randomCategoryColors(data.categories);
+  const colors=randomCategoryColors(data.categories.map(c=>({id:Number(c.id),name:String(c.name),type:String(c.type),color:String(c.color??'')})));
   confirm({
    title:'Sortear novas cores para as categorias?',
    description:'O Lumi vai distribuir cores pastéis diferentes entre todas as categorias. As cores personalizadas também serão substituídas, mas os nomes, saldos e lançamentos não serão alterados.',
