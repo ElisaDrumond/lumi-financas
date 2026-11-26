@@ -354,3 +354,8 @@
 .month-close-decision select,.month-close-decision input{max-width:100%;padding:9px;border-radius:10px;border:1px solid #e1d6f3;background:#fffafd;color:#67547f;font:inherit;font-size:12px}
 .month-close-decision label{display:grid;gap:5px;font-size:11px;color:#827196}
 @media(max-width:680px){.month-close-decision{width:100%;margin-left:0}}
+
+.lumi-obligation-editor{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;max-width:100%}
+.lumi-obligation-editor select,.lumi-obligation-editor input{background:#fffafd;border:1px solid #e2d8f3;border-radius:9px;padding:8px;color:#726184;font:inherit;font-size:11px;min-width:0}
+.lumi-obligation-editor .error{flex-basis:100%;font-size:11px}
+@media(max-width:700px){.lumi-obligation-editor{justify-content:flex-start;width:100%}}
