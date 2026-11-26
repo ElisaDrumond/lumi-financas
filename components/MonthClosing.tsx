@@ -5,7 +5,7 @@ import MoneyInput from './MoneyInput';
 import {useConfirm} from './ConfirmDialog';
 
 type Account={id:number;name:string;calculated_cents:number;reconciled_cents:number};
-type Pending={kind:'occurrence'|'transaction'|'installment';id:number;type:string;description:string;due_on:string;remaining_cents:number};
+type Pending={kind:'occurrence'|'transaction'|'installment'|'invoice';id:number;type:string;description:string;due_on:string;remaining_cents:number};
 type Budget={id:number;category_name:string;label_name:string;limit_cents:number;spent_cents:number;remaining_cents:number};
 type BudgetTotals={limit_cents:number;spent_cents:number;unused_cents:number;exceeded_cents:number};
 type Preview={budgets:Budget[];budgetTotals:BudgetTotals;period:string;end:string;accounts:Account[];pending:Pending[];flow:{received:number;spent:number};existing:{id:number;notes:string;closed_at:string}|null;total_calculated_cents:number;pending_income_cents:number;pending_expense_cents:number;canClose:boolean};
@@ -16,7 +16,7 @@ const parse=(v:string)=>v.trim()===''?Number.NaN:Math.round(Number(v.replace(','
 export default function MonthClosing({period,refresh,closures,closureAccounts,closurePending,closureBudgets}:Props){
  const confirm=useConfirm();
  const [expanded,setExpanded]=useState(false),[preview,setPreview]=useState<Preview|null>(null);
- const [values,setValues]=useState<Record<number,string>>({}),[choices,setChoices]=useState<Record<string,'carry'|'review'>>({});
+ const [values,setValues]=useState<Record<number,string>>({}),[choices,setChoices]=useState<Record<string,'scheduled'|'unscheduled'|'archived'>>({}),[targets,setTargets]=useState<Record<string,string>>({});
  const [notes,setNotes]=useState(''),[loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState('');
  const existing=closures.find(c=>c.period===period);
  const accounts=existing?closureAccounts.filter(a=>a.closure_id===existing.id):[];
@@ -30,7 +30,9 @@ export default function MonthClosing({period,refresh,closures,closureAccounts,cl
    if(!response.ok)throw Error(result.error||'Falha ao carregar a prévia.');
    setPreview(result as Preview);
    setValues(Object.fromEntries((result.accounts as Account[]).map(a=>[a.id,(a.calculated_cents/100).toFixed(2)])));
-   setChoices(Object.fromEntries((result.pending as Pending[]).map(p=>[p.kind+'-'+p.id,'carry'])));
+   setChoices(Object.fromEntries((result.pending as Pending[]).map(p=>[p.kind+'-'+p.id,'unscheduled'])));
+   const next=new Date(Date.UTC(Number(period.slice(0,4)),Number(period.slice(5)),1)).toISOString().slice(0,7);
+   setTargets(Object.fromEntries((result.pending as Pending[]).map(p=>[p.kind+'-'+p.id,next])));
    setNotes('');
   }catch(e){setError(e instanceof Error?e.message:'Falha ao abrir conciliação.');}
   finally{setLoading(false);}
@@ -41,7 +43,7 @@ export default function MonthClosing({period,refresh,closures,closureAccounts,cl
  const invalid=rows.some(a=>!Number.isSafeInteger(a.reconciled_cents));
  const delta=rows.reduce((s,a)=>s+(Number.isSafeInteger(a.reconciled_cents)?a.reconciled_cents-a.calculated_cents:0),0);
  const total=rows.reduce((s,a)=>s+(Number.isSafeInteger(a.reconciled_cents)?a.reconciled_cents:0),0);
- const unresolved=Object.values(choices).some(c=>c==='review');
+ const unresolved=preview?.pending.some(p=>{const key=p.kind+'-'+p.id;return choices[key]==='scheduled'&&(!/^\d{4}-(0[1-9]|1[0-2])$/.test(targets[key]??'')||(targets[key]??'')<=period);})??false;
  const run=async(url:string,payload:Record<string,unknown>)=>{
   setSaving(true);setError('');
   try{
@@ -56,10 +58,10 @@ export default function MonthClosing({period,refresh,closures,closureAccounts,cl
   if(!preview||invalid||unresolved)return;
   confirm({
    title:'Confirmar fechamento de '+period.slice(5)+'/'+period.slice(0,4)+'?',
-   description:'Os saldos conciliados serão preservados como abertura do próximo mês. Pendências continuarão ligadas às datas originais. Nenhum pagamento ou ajuste bancário será criado automaticamente.',
+   description:'Os saldos conciliados serão preservados. As pendências reagendadas entrarão somente no mês escolhido; arquivar ou deixar sem previsão não quita dívidas nem movimenta o banco.',
    confirmLabel:'Fechar mês',
    successMessage:'Mês conciliado e fechado.',
-   onConfirm:()=>run('month-close',{period,notes,confirm_differences:delta!==0,expected_pending_signature:preview.pending.map(p=>[p.kind,p.id,p.due_on,p.remaining_cents].join(':')).join('|'),expected_received_cents:preview.flow.received,expected_spent_cents:preview.flow.spent,expected_budget_signature:preview.budgets.map(b=>[b.id,b.limit_cents,b.spent_cents].join(':')).join('|'),accounts:rows.map(a=>({account_id:a.id,reconciled_cents:a.reconciled_cents,expected_calculated_cents:a.calculated_cents}))})
+   onConfirm:()=>run('month-close',{period,notes,decisions:preview.pending.map(p=>{const key=p.kind+'-'+p.id;return {kind:p.kind,id:p.id,status:choices[key]??'unscheduled',target_period:choices[key]==='scheduled'?targets[key]:null};}),confirm_differences:delta!==0,expected_pending_signature:preview.pending.map(p=>[p.kind,p.id,p.due_on,p.remaining_cents].join(':')).join('|'),expected_received_cents:preview.flow.received,expected_spent_cents:preview.flow.spent,expected_budget_signature:preview.budgets.map(b=>[b.id,b.limit_cents,b.spent_cents].join(':')).join('|'),accounts:rows.map(a=>({account_id:a.id,reconciled_cents:a.reconciled_cents,expected_calculated_cents:a.calculated_cents}))})
   });
  };
  const reopen=()=>confirm({
@@ -92,12 +94,12 @@ export default function MonthClosing({period,refresh,closures,closureAccounts,cl
     <div className="month-close-accounts">{preview.accounts.map(a=><div className="month-close-account" key={a.id}><div><strong>{a.name}</strong><small>Calculado pelo Lumi: {money(a.calculated_cents)}</small></div><div className="month-close-input"><MoneyInput allowNegative value={values[a.id]??''} onValueChange={v=>setValues(old=>({...old,[a.id]:v}))}/><small>Diferença: {money((rows.find(r=>r.id===a.id)?.reconciled_cents??a.calculated_cents)-a.calculated_cents)}</small></div></div>)}</div>
     <div className="month-close-total"><span>Saldo real conferido</span><strong>{money(total)}</strong></div>
     <h4>2. Revisar pendências</h4>
-    <p className="month-close-hint">As pendências abaixo continuam abertas na data original. Se precisar registrar um pagamento ou recebimento, use o botão correspondente nas listas do Planejamento e atualize a prévia antes de fechar.</p>
-    {preview.pending.length?<div className="month-close-pendings">{preview.pending.map(p=><div className="month-close-pending" key={p.kind+'-'+p.id}><div><strong>{p.description}</strong><small>{p.type==='income'?'Receita':'Despesa'} · Vencimento {new Date(p.due_on+'T12:00:00').toLocaleDateString('pt-BR')} · Restante {money(p.remaining_cents)}</small></div><select aria-label={'Decisão sobre '+p.description} value={choices[p.kind+'-'+p.id]||'carry'} onChange={e=>setChoices(old=>({...old,[p.kind+'-'+p.id]:e.target.value as 'carry'|'review'}))}><option value="carry">Manter pendente</option><option value="review">Preciso revisar</option></select></div>)}</div>:<p className="month-close-hint"><CheckCircle2 size={16}/> Nenhuma pendência identificada.</p>}
+    <p className="month-close-hint">Mantenha a data original e escolha quando pretende pagar ou receber. Sem previsão e arquivadas permanecem no histórico, mas não entram nas saídas ou entradas programadas do mês seguinte. Nenhuma escolha registra pagamento.</p>
+    {preview.pending.length?<div className="month-close-pendings">{preview.pending.map(p=><div className="month-close-pending" key={p.kind+'-'+p.id}><div><strong>{p.description}</strong><small>{p.type==='income'?'Receita':'Despesa'} · Vencimento {new Date(p.due_on+'T12:00:00').toLocaleDateString('pt-BR')} · Restante {money(p.remaining_cents)}</small></div><div className="month-close-decision"><select aria-label={'Decisão sobre '+p.description} value={choices[p.kind+'-'+p.id]??'unscheduled'} onChange={e=>setChoices(old=>({...old,[p.kind+'-'+p.id]:e.target.value as 'scheduled'|'unscheduled'|'archived'}))}><option value="scheduled">Reprogramar para outro mês</option><option value="unscheduled">Manter sem previsão definida</option><option value="archived">Arquivar da projeção</option></select>{choices[p.kind+'-'+p.id]==='scheduled'&&<label>Mês previsto <input aria-label={'Mês previsto para '+p.description} type="month" min={new Date(Date.UTC(Number(period.slice(0,4)),Number(period.slice(5)),1)).toISOString().slice(0,7)} value={targets[p.kind+'-'+p.id]??''} onChange={e=>setTargets(old=>({...old,[p.kind+'-'+p.id]:e.target.value}))}/></label>}</div></div>)}</div>:<p className="month-close-hint"><CheckCircle2 size={16}/> Nenhuma pendência identificada.</p>}
     <h4>3. Confirmar fechamento</h4>
     <textarea rows={2} value={notes} maxLength={500} onChange={e=>setNotes(e.target.value)} placeholder="Observações opcionais sobre este fechamento..."/>
     {delta!==0&&<p className="month-close-warning"><AlertCircle size={16}/> Diferença entre saldo informado e saldo calculado: {money(delta)}. Será registrada apenas na fotografia da conciliação, não no extrato.</p>}
-    {unresolved&&<p className="month-close-warning">Há pendências marcadas para revisão. Resolva-as antes de fechar o mês.</p>}
+    {unresolved&&<p className="month-close-warning">Escolha um mês futuro válido para cada pendência reagendada.</p>}
     {!preview.canClose&&<p className="month-close-hint">Este mês ainda não terminou ou já foi fechado. A prévia está disponível, mas a confirmação só é liberada após o último dia do mês.</p>}
     <div className="month-close-footer"><button type="button" className="small-btn" onClick={()=>void fetchPreview()} disabled={saving||loading}><RefreshCw size={14}/> Atualizar prévia</button><button type="button" className="primary-btn" onClick={save} disabled={!preview.canClose||invalid||unresolved||saving}>{saving?'Salvando...':'Confirmar fechamento'}<CheckCircle2 size={16}/></button></div>
    </>}
