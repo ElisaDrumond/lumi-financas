@@ -1,7 +1,8 @@
 ﻿export type Row=Record<string,any>;
 import {monthlyBudgetImpact} from './budgets';
 import {cardInvoices} from './invoices';
-export type FinanceData={accounts:Row[],transactions:Row[],installments:Row[],payments:Row[],occurrences:Row[],adjustments:Row[],goals:Row[],goalMovements:Row[],transactionPayments?:Row[],invoicePayments?:Row[],purchases?:Row[],cards?:Row[]};
+import {planForecastDelta,obligationPlan} from './obligation-plans';
+export type FinanceData={accounts:Row[],transactions:Row[],installments:Row[],payments:Row[],occurrences:Row[],adjustments:Row[],goals:Row[],goalMovements:Row[],transactionPayments?:Row[],invoicePayments?:Row[],obligationPlans?:Row[],purchases?:Row[],cards?:Row[]};
 export const sameAccount=(row:Row,account:string|number='')=>account===''||Number(row.account_id)===Number(account);
 export function accountBalance(data:FinanceData,account:string|number=''){
  const belongs=(r:Row)=>sameAccount(r,account);
@@ -82,7 +83,7 @@ export function carryoverItems(data:FinanceData,period:string,account:string|num
   const remaining=Math.max(0,i.amount_cents-paid);
   if(remaining)result.push({key:'installment-'+i.id,kind:'installment',id:i.id,description:i.description+' — '+i.number+'ª parcela',type:'expense',goal:false,due_on:i.due_on,account_id:owner,account_name:accountName(owner),amount_cents:i.amount_cents,paid_cents:paid,remaining_cents:remaining});
  }
- return result.sort((a,b)=>a.due_on.localeCompare(b.due_on)||a.key.localeCompare(b.key));
+ return result.filter(item=>!obligationPlan(data,item.kind,item.id)).sort((a,b)=>a.due_on.localeCompare(b.due_on)||a.key.localeCompare(b.key));
 }
 /** Monthly budget forecast: obligations belong to their original competence, while actual payments are reported by payment date. */
 export function monthlyForecast(data:FinanceData,period:string,account:string|number=''){
@@ -133,6 +134,10 @@ export function monthlyForecast(data:FinanceData,period:string,account:string|nu
   reserves+=(m.direction==='deposit'?1:-1)*m.amount_cents;
  }
  const adjustment=data.adjustments.filter(a=>a.adjusted_on.startsWith(period)&&relevant(a)).reduce((s,a)=>s+a.amount_cents,0);
+ // Reprogrammed unpaid obligations from reconciled months affect only their
+ // chosen month. Their original legal due dates remain unchanged.
+ const planned=planForecastDelta(data,period,account);
+ income+=planned.income;expense+=planned.expense;
  const budget=monthlyBudgetImpact(data,period,account);
  const expenseAlreadyScheduled=expense;
  expense+=budget.additional_cents;
@@ -221,7 +226,7 @@ export function planningSummary(data:FinanceData,period:string,account:string|nu
  +(type==='expense'?(data.invoicePayments??[]).filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)).reduce((s,p)=>s+p.amount_cents,0):0);
  const goalOut=data.goalMovements.filter(m=>m.moved_on.startsWith(period)&&sameAccount(m,account)).reduce((s,m)=>s+(m.direction==='deposit'?1:-1)*m.amount_cents,0);
  const cardPurchaseIds=new Set((data.purchases??[]).filter(p=>p.method==='card').map(p=>Number(p.id)));
- const invoiceToPay=cardInvoices(data).filter(i=>i.period===period&&(account===''||Number(i.account_id)===Number(account))).reduce((s,i)=>s+i.remaining_cents,0);
+ const invoiceToPay=cardInvoices(data).filter(i=>i.period===period&&(account===''||Number(i.account_id)===Number(account))&&!obligationPlan(data,'invoice',i.card_id*1000000+Number(i.period.replace('-','')))).reduce((s,i)=>s+i.remaining_cents,0);
  const pendingInstallments=data.installments.filter(i=>!cardPurchaseIds.has(Number(i.purchase_id))&&!i.paid_on&&i.due_on.startsWith(period)&&sameAccount({...i,account_id:i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id},account)).reduce((s,i)=>s+Math.max(0,i.amount_cents-data.payments.filter(p=>p.installment_id===i.id).reduce((v,p)=>v+p.amount_cents,0)),0);
  const transactionDue=(t:Row)=>Math.max(0,t.amount_cents-(data.transactionPayments??[]).filter(p=>p.transaction_id===t.id).reduce((s,p)=>s+p.amount_cents,0));
  const pendingAvulsos=(type:string)=>data.transactions.filter(t=>t.status==='planned'&&t.type===type&&t.date.startsWith(period)&&sameAccount(t,account)).reduce((s,t)=>s+transactionDue(t),0);
@@ -229,8 +234,20 @@ export function planningSummary(data:FinanceData,period:string,account:string|nu
  const outstandingExpenses=carryover.filter(x=>x.type==='expense'&&!x.goal).reduce((s,x)=>s+x.remaining_cents,0);
  const outstandingIncome=carryover.filter(x=>x.type==='income').reduce((s,x)=>s+x.remaining_cents,0);
  const toGoals=sum('expense',true,true);
- const toPay=sum('expense',true)+pendingInstallments+pendingAvulsos('expense')+invoiceToPay;
- const toReceive=sum('income',true)+pendingAvulsos('income');
+ const plannedTarget=(type:'expense'|'income')=>(data.obligationPlans??[]).filter(p=>p.status==='scheduled'&&p.target_period===period).reduce((sum,p)=>{
+  const item=p.kind==='invoice'?cardInvoices(data).find(i=>i.card_id*1000000+Number(i.period.replace('-',''))===Number(p.record_id)):null;
+  const occurrence=p.kind==='occurrence'?data.occurrences.find(o=>Number(o.id)===Number(p.record_id)):null;
+  const transaction=p.kind==='transaction'?data.transactions.find(t=>Number(t.id)===Number(p.record_id)):null;
+  const installment=p.kind==='installment'?data.installments.find(i=>Number(i.id)===Number(p.record_id)):null;
+  const owner=item?.account_id??occurrence?.account_id??transaction?.account_id??installment?.account_id??null;
+  if(account!==''&&Number(owner)!==Number(account))return sum;
+  const originalType=item?'expense':occurrence?.type??transaction?.type??(installment?'expense':null);
+  if(originalType!==type)return sum;
+  const value=item?.remaining_cents??(occurrence?Math.max(0,occurrence.amount_cents-(occurrence.paid_cents??0)):transaction?Math.max(0,transaction.amount_cents-(data.transactionPayments??[]).filter(x=>x.transaction_id===transaction.id).reduce((v,x)=>v+x.amount_cents,0)):installment?Math.max(0,installment.amount_cents-data.payments.filter(x=>x.installment_id===installment.id).reduce((v,x)=>v+x.amount_cents,0)):0);
+  return sum+value;
+ },0);
+ const toPay=sum('expense',true)+pendingInstallments+pendingAvulsos('expense')+invoiceToPay+plannedTarget('expense');
+ const toReceive=sum('income',true)+pendingAvulsos('income')+plannedTarget('income');
  const monthly=monthlyForecast(data,period,account);
  const openingBalance=forecastOpening(data,period,account);
  const latestClosed=(data as FinanceData & {monthClosures?:Row[]}).monthClosures?.filter(c=>c.period<period).sort((a,b)=>b.period.localeCompare(a.period))[0];
