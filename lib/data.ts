@@ -128,6 +128,16 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
     db.exec('COMMIT');return {lastInsertRowid:0};
    }catch(e){db.exec('ROLLBACK');throw e;}
   }
+  case 'card-edit': {
+   const cardId=id(payload.id),closing=integer(payload.closing_day),due=integer(payload.due_day),limit=integer(payload.limit_cents);
+   if(closing<1||closing>28||due<1||due>28)throw Error('Use dias de 1 a 28.');
+   if(limit<0)throw Error('O limite não pode ser negativo.');
+   const existing=db.prepare('SELECT id FROM cards WHERE id=?').get(cardId);
+   if(!existing)throw Error('Cartão não encontrado.');
+   const committed=cardCommitment(readAll(),Number(cardId));
+   if(limit<committed)throw Error('O novo limite não pode ser menor que o valor já comprometido ('+new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(committed/100)+').');
+   return run('UPDATE cards SET limit_cents=?,closing_day=?,due_day=? WHERE id=?',limit,closing,due,cardId);
+  }
   case 'cards': {const closing=integer(payload.closing_day),due=integer(payload.due_day);if(closing<1||closing>28||due<1||due>28)throw Error('Use dias de 1 a 28.');return run('INSERT INTO cards(name,limit_cents,closing_day,due_day,color,account_id) VALUES(?,?,?,?,?,?)',text(payload.name),integer(payload.limit_cents??0),closing,due,name(payload.color)||'#a48bf5',id(payload.account_id,false));}
   case 'transactions': {
    if(name(payload.payment_method)==='credit'){

@@ -25,7 +25,7 @@ export function cardInvoices(data:InvoiceLedger):CardInvoice[]{
   let invoice=map.get(key);
   if(!invoice){
    invoice={key,card_id:Number(card.id),card_name:String(card.name),period,
-    due_on:period+'-'+String(card.due_day).padStart(2,'0'),
+    due_on:String(i.due_on),
     account_id:card.account_id??null,total_cents:0,paid_cents:0,remaining_cents:0,
     status:'pending',items:[]};
    map.set(key,invoice);
