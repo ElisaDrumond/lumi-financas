@@ -567,3 +567,19 @@ test('limite não gasto não é transportado; conciliação congela resultado do
  assert.equal(readAll(next).monthClosureBudgets.some(b=>b.closure_id===frozen.id),false);
  assert.equal(readAll(next).transactions.some(tx=>tx.id===expense),true);
 });
+
+test('cores sorteadas são únicas e não mudam cadastros financeiros',()=>{
+ const {randomCategoryColors}=require('../.test-build/category-colors');
+ const categories=[...Array(24)].map((_,i)=>({id:i+1,name:'Categoria '+i,type:i%2?'income':'expense',color:'#F48FB1'}));
+ const sequence=[0.33,0.81,0.12,0.56,0.09,0.97];
+ let index=0;
+ const colors=randomCategoryColors(categories,()=>sequence[index++%sequence.length]);
+ assert.equal(colors.length,categories.length);
+ assert.equal(new Set(colors.map(x=>x.id)).size,categories.length);
+ assert.equal(new Set(colors.map(x=>x.color)).size,categories.length);
+ assert.ok(colors.every(x=>/^#[0-9a-f]{6}$/i.test(x.color)));
+ assert.equal(categories[0].color,'#F48FB1');
+ assert.deepEqual(randomCategoryColors([],()=>0.5),[]);
+ const reversed=randomCategoryColors(categories,()=>0.9);
+ assert.notDeepEqual(colors,reversed);
+});
