@@ -306,3 +306,10 @@
 .installment-purchase-toolbar .purchase-budget-label{margin:0;min-width:0}
 .installment-purchase-toolbar-actions{margin-left:auto;justify-content:flex-end;gap:10px}
 @media(max-width:650px){.installment-purchase-toolbar{margin:6px 5px 16px;gap:14px}.installment-purchase-toolbar-actions{width:100%;justify-content:flex-end}}
+
+/* Purchase list payment-management filter */
+.purchase-filter{display:flex;gap:4px;padding:5px;border:1px solid #e8def7;border-radius:15px;background:#f7f3ffb0;flex-wrap:wrap}
+.purchase-filter button{border:0;border-radius:11px;padding:9px 13px;color:#8b79a5;background:transparent;font:inherit;font-size:12px;font-weight:650;cursor:pointer;transition:background .2s,color .2s}
+.purchase-filter button.active{background:linear-gradient(120deg,#a58aee,#929ce8);color:white;box-shadow:0 4px 12px #aaa0dc2b}
+.purchase-filter button:focus-visible{outline:2px solid #8772d6;outline-offset:2px}
+@media(max-width:650px){.purchase-filter{width:100%}.purchase-filter button{flex:1;min-width:max-content;padding:8px}}
