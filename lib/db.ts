@@ -298,3 +298,6 @@ db.exec(`CREATE TABLE IF NOT EXISTS obligation_plans(
  CHECK((status='scheduled' AND target_period IS NOT NULL) OR (status!='scheduled' AND target_period IS NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_obligation_plans_target ON obligation_plans(target_period,status);`);
+const planColumns=db.prepare("PRAGMA table_info(obligation_plans)").all() as {name:string}[];
+if(!planColumns.some(col=>col.name==='set_in_period'))db.exec('ALTER TABLE obligation_plans ADD COLUMN set_in_period TEXT;');
+

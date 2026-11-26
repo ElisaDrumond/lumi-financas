@@ -359,3 +359,5 @@
 .lumi-obligation-editor select,.lumi-obligation-editor input{background:#fffafd;border:1px solid #e2d8f3;border-radius:9px;padding:8px;color:#726184;font:inherit;font-size:11px;min-width:0}
 .lumi-obligation-editor .error{flex-basis:100%;font-size:11px}
 @media(max-width:700px){.lumi-obligation-editor{justify-content:flex-start;width:100%}}
+
+.month-close-decision-summary{display:block;margin-top:5px;color:#866fba;font-weight:750;font-size:11px}

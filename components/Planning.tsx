@@ -96,7 +96,7 @@ export default function Planning({data,refresh}:Props){
    <MonthTimeline period={period} todayPeriod={iso().slice(0,7)} closedPeriods={data.monthClosures.map(c=>String(c.period))} projectedCents={sums.projected} budgetAdditionalCents={sums.budgetAdditional??0} onChange={changePeriod}/>
    <MonthlyBudgets data={data} period={period} account="" refresh={refresh}/>
    <CardInvoices data={data} period={period} account={account} refresh={refresh}/>
-   <MonthClosing period={period} refresh={refresh} closures={data.monthClosures||[]} closureAccounts={data.monthClosureAccounts||[]} closurePending={data.monthClosurePending||[]} closureBudgets={data.monthClosureBudgets||[]}/>
+   <MonthClosing period={period} refresh={refresh} closures={data.monthClosures||[]} closureAccounts={data.monthClosureAccounts||[]} closurePending={data.monthClosurePending||[]} closureBudgets={data.monthClosureBudgets||[]} obligationPlans={data.obligationPlans||[]}/>
    <ExpenseCategoryChart items={expenseChart} period={period}/>
    <details className="planning-fold" open>
     {sectionTitle('Reprogramadas para este mês',scheduled.length)}
