@@ -583,3 +583,24 @@ test('cores sorteadas são únicas e não mudam cadastros financeiros',()=>{
  const reversed=randomCategoryColors(categories,()=>0.9);
  assert.notDeepEqual(colors,reversed);
 });
+
+test('pular diretamente vários meses projeta todas as recorrências intermediárias sem depender de cache',()=>{
+ const startOffset=40,targetOffset=55;
+ const start=shifted(startOffset),target=shifted(targetOffset);
+ const account=add('accounts',{name:'Conta salto direto de meses',initial_balance:0});
+ const recurring=add('recurrings',definition(account,{description:'Receita distante mensal',type:'income',start_on:start+'-01',amount_cents:755850,due_day:10}));
+ const before=db.prepare('SELECT COUNT(*) AS count FROM recurring_occurrences WHERE recurring_id=?').get(recurring).count;
+ assert.equal(before,0,'recorrência futura ainda não foi acessada');
+ const directData=readAll(target);
+ const direct=planningSummary(directData,target,account);
+ assert.equal(direct.openingBalance,15*755850,'quinze meses intermediários devem entrar no saldo de abertura');
+ assert.equal(direct.income,755850,'o mês selecionado mostra somente sua receita');
+ assert.equal(direct.projected,16*755850);
+ const occurrences=()=>db.prepare('SELECT COUNT(*) AS count FROM recurring_occurrences WHERE recurring_id=?').get(recurring).count;
+ assert.equal(occurrences(),16,'não podem faltar meses entre início e destino');
+ for(let i=startOffset;i<=targetOffset;i++)readAll(shifted(i));
+ const sequential=planningSummary(readAll(target),target,account);
+ assert.equal(sequential.openingBalance,direct.openingBalance);
+ assert.equal(sequential.projected,direct.projected);
+ assert.equal(occurrences(),16,'visitar os meses posteriormente não duplica recorrências');
+});
