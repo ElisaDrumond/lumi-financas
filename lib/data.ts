@@ -337,6 +337,9 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const installmentId=id(payload.id);
    const amount=positive(payload.amount_cents),due=date(payload.due_on);ensureOpen(due);
    const oldDue=db.prepare('SELECT due_on FROM installments WHERE id=?').get(installmentId) as {due_on:string}|undefined;if(oldDue)ensureOpen(oldDue.due_on);
+   // Calculate available credit before starting a write transaction: readAll
+   // materializes recurring occurrences and must not start a nested transaction.
+   const creditLedger=readAll(due.slice(0,7));
    db.exec('BEGIN IMMEDIATE');
    try {
     const current=db.prepare('SELECT id,purchase_id,paid_on,amount_cents FROM installments WHERE id=?').get(installmentId) as {id:number;purchase_id:number;paid_on:string|null;amount_cents:number}|undefined;
@@ -348,7 +351,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
      if(db.prepare('SELECT 1 FROM invoice_payments WHERE card_id=? AND period=? LIMIT 1').get(purchase.card_id,due.slice(0,7)))throw Error('A fatura de destino já possui pagamento registrado.');
      if(amount>current.amount_cents){
       const card=db.prepare('SELECT limit_cents FROM cards WHERE id=?').get(purchase.card_id) as {limit_cents:number};
-      const available=card.limit_cents-cardCommitment(readAll(due.slice(0,7)),Number(purchase.card_id));
+      const available=card.limit_cents-cardCommitment(creditLedger,Number(purchase.card_id));
       if(amount-current.amount_cents>available)throw Error('Esta edição ultrapassaria o limite disponível do cartão.');
      }
     }
