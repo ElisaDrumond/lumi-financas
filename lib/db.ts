@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS month_closure_accounts (
 );
 CREATE TABLE IF NOT EXISTS month_closure_pending (
  closure_id INTEGER NOT NULL REFERENCES month_closures(id) ON DELETE CASCADE,
- kind TEXT NOT NULL CHECK(kind IN ('occurrence','transaction','installment')),
+ kind TEXT NOT NULL CHECK(kind IN ('occurrence','transaction','installment','invoice')),
  record_id INTEGER NOT NULL,
  type TEXT NOT NULL CHECK(type IN ('income','expense')),
  description TEXT NOT NULL,
@@ -163,6 +163,33 @@ CREATE TABLE IF NOT EXISTS month_closure_pending (
  PRIMARY KEY(closure_id,kind,record_id)
 );
 CREATE INDEX IF NOT EXISTS idx_month_closure_pending_period ON month_closure_pending(closure_id);`);
+
+/** Add invoice snapshots to already-existing databases without discarding history.
+ * SQLite cannot change a CHECK constraint with ALTER TABLE; rebuild the child
+ * snapshot table inside a single transaction and copy every existing row.
+ */
+const pendingDefinition=(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='month_closure_pending'").get() as {sql:string}).sql;
+if(!pendingDefinition.includes("'invoice'")){
+ db.exec('BEGIN IMMEDIATE');
+ try{
+  db.exec(`CREATE TABLE month_closure_pending_next (
+   closure_id INTEGER NOT NULL REFERENCES month_closures(id) ON DELETE CASCADE,
+   kind TEXT NOT NULL CHECK(kind IN ('occurrence','transaction','installment','invoice')),
+   record_id INTEGER NOT NULL,
+   type TEXT NOT NULL CHECK(type IN ('income','expense')),
+   description TEXT NOT NULL,
+   due_on TEXT NOT NULL,
+   remaining_cents INTEGER NOT NULL CHECK(remaining_cents > 0),
+   PRIMARY KEY(closure_id,kind,record_id)
+  );
+  INSERT INTO month_closure_pending_next(closure_id,kind,record_id,type,description,due_on,remaining_cents)
+   SELECT closure_id,kind,record_id,type,description,due_on,remaining_cents FROM month_closure_pending;
+  DROP TABLE month_closure_pending;
+  ALTER TABLE month_closure_pending_next RENAME TO month_closure_pending;
+  CREATE INDEX idx_month_closure_pending_period ON month_closure_pending(closure_id);`);
+  db.exec('COMMIT');
+ }catch(error){db.exec('ROLLBACK');throw error;}
+}
 
 /* Backfill added snapshot totals if the closing table was created by an earlier patch. */
 for(const [column] of [['received_cents'],['spent_cents']] as const){
