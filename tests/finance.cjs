@@ -940,7 +940,7 @@ test('fechamento reagenda receitas, boleto e fatura sem transportar dívida para
  assert.equal(monthlyForecast(data,later).income,15000);
  assert.equal(planningSummary(data,later).toPay,50000);
  assert.equal(planningSummary(data,later).toReceive,15000);
- assert.equal(scheduledObligations(data,later,account).length,3);
+ assert.equal(scheduledObligations(data,later).length,3);
  assert.equal(accountBalance(data,account),100000);
  assert.equal(data.transactions.find(t=>t.id===income).date,old+'-10');
  assert.equal(data.installments.find(i=>i.id===installment).due_on,old+'-18');
