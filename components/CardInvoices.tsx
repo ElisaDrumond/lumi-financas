@@ -4,15 +4,22 @@ import type {Row} from '@/lib/finance';
 import {CreditCard,Check,ChevronRight,Wallet} from 'lucide-react';
 import MoneyInput from './MoneyInput';
 import {cardInvoices,cardCommitment,type InvoiceLedger} from '@/lib/invoices';
+import {obligationPlan,invoiceRecordId} from '@/lib/obligation-plans';
 
-type Data=InvoiceLedger & {accounts:Row[]};
+type Data=InvoiceLedger & {accounts:Row[];obligationPlans?:Row[]};
 type Props={data:Data;refresh:(period?:string)=>Promise<void>;period?:string;account?:string;};
 const money=(c:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format((c||0)/100);
 const today=()=>new Date().toLocaleDateString('en-CA');
 const cents=(v:string)=>Math.round(Number(v.replace(',','.'))*100);
 export default function CardInvoices({data,refresh,period,account=''}:Props){
  const invoices=useMemo(()=>cardInvoices(data),[data]);
- const filtered=invoices.filter(i=>(!period||i.period===period||i.period<period&&i.remaining_cents>0)&&(account===''||Number(i.account_id)===Number(account)));
+ const filtered=invoices.filter(i=>{
+  if(account!==''&&Number(i.account_id)!==Number(account))return false;
+  if(!period)return true; // Keep the complete invoice history in the Cards tab.
+  const plan=obligationPlan(data,'invoice',invoiceRecordId(i.card_id,i.period));
+  if(plan)return plan.status==='scheduled'&&plan.target_period===period||i.status==='paid'&&i.period===period;
+  return i.period===period||i.period<period&&i.remaining_cents>0;
+ });
  const [active,setActive]=useState<string|null>(null);
  const [amount,setAmount]=useState('');
  const [paidOn,setPaidOn]=useState(today());
@@ -43,7 +50,7 @@ export default function CardInvoices({data,refresh,period,account=''}:Props){
   <div className="lumi-invoices-title"><div><h3>Faturas dos cartões</h3><p>Faturas previstas geradas automaticamente pelas compras e parcelas. O banco só é descontado no pagamento.</p></div><CreditCard size={23}/></div>
   {(data.cards??[]).length>0&&!period&&<div className="lumi-card-limits">{(data.cards??[]).map(card=><div key={card.id}><strong>{card.name}</strong><span>Limite total: {money(card.limit_cents)}</span><span>Comprometido: {money(cardCommitment(data,Number(card.id)))}</span><span>Disponível: {money(card.limit_cents-cardCommitment(data,Number(card.id)))}</span></div>)}</div>}
   <div className="lumi-invoice-list">{filtered.map(invoice=><details key={invoice.key} className="lumi-invoice-row">
-   <summary><ChevronRight size={16}/><span><strong>{invoice.card_name} · {invoice.period.slice(5)}/{invoice.period.slice(0,4)}</strong><small>Vencimento {new Date(invoice.due_on+'T12:00:00').toLocaleDateString('pt-BR')} · {invoice.items.length} parcela(s)</small></span><span className="lumi-invoice-amount"><strong>{money(invoice.remaining_cents)}</strong><small>{invoice.status==='paid'?'Paga':invoice.status==='partial'?'Parcialmente paga':'A pagar'}</small></span></summary>
+   <summary><ChevronRight size={16}/><span><strong>{invoice.card_name} · {invoice.period.slice(5)}/{invoice.period.slice(0,4)}</strong><small>Vencimento original {new Date(invoice.due_on+'T12:00:00').toLocaleDateString('pt-BR')} · {invoice.items.length} parcela(s){obligationPlan(data,'invoice',invoiceRecordId(invoice.card_id,invoice.period))?.status==='scheduled'?' · Pagamento previsto para '+obligationPlan(data,'invoice',invoiceRecordId(invoice.card_id,invoice.period))?.target_period:''}</small></span><span className="lumi-invoice-amount"><strong>{money(invoice.remaining_cents)}</strong><small>{invoice.status==='paid'?'Paga':invoice.status==='partial'?'Parcialmente paga':'A pagar'}</small></span></summary>
    <div className="lumi-invoice-details">
     {invoice.items.map(i=><div key={i.id}><span>{i.description} — {i.number}ª parcela</span><strong>{money(i.amount_cents)}</strong></div>)}
     <div><span>Total da fatura</span><strong>{money(invoice.total_cents)}</strong></div>
