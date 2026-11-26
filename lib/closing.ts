@@ -2,6 +2,7 @@ import db from './db';
 import {readAll} from './data';
 import {accountBalanceThrough,cashFlowForMonth,type FinanceData,type Row} from './finance';
 import {categoryBudgetSummary} from './budgets';
+import {cardInvoices} from './invoices';
 
 const validPeriod=(value:unknown)=>{
  const p=String(value??'');
@@ -11,7 +12,7 @@ const validPeriod=(value:unknown)=>{
 const endOfMonth=(period:string)=>new Date(Date.UTC(Number(period.slice(0,4)),Number(period.slice(5)),0)).toISOString().slice(0,10);
 const currentMonth=()=>new Date().toLocaleDateString('en-CA').slice(0,7);
 type SnapshotAccount={id:number;name:string;calculated_cents:number;reconciled_cents:number};
-type Pending={kind:'occurrence'|'transaction'|'installment';id:number;type:string;description:string;due_on:string;remaining_cents:number};
+type Pending={kind:'occurrence'|'transaction'|'installment'|'invoice';id:number;type:string;description:string;due_on:string;remaining_cents:number};
 type Ledger=FinanceData & {monthClosures:Row[]};
 function unresolved(data:Ledger,period:string):Pending[]{
  const end=endOfMonth(period),entries:Pending[]=[];
@@ -31,13 +32,25 @@ function unresolved(data:Ledger,period:string):Pending[]{
   const remaining=Math.max(0,t.amount_cents-paid);
   if(remaining)entries.push({kind:'transaction',id:t.id,type:t.type,description:t.description,due_on:t.date,remaining_cents:remaining});
  }
+ const creditIds=new Set(((data as Ledger & {purchases?:Row[]}).purchases??[]).filter(p=>p.method==='card').map(p=>Number(p.id)));
  for(const i of data.installments){
-  if(i.due_on>end||i.paid_on&&i.paid_on<=end)continue;
+  if(creditIds.has(Number(i.purchase_id))||i.due_on>end||i.paid_on&&i.paid_on<=end)continue;
   const records=data.payments.filter(p=>p.installment_id===i.id&&p.paid_on<=end);
   if(records.some(p=>p.settled))continue;
   const paid=records.reduce((s,p)=>s+p.amount_cents,0);
   const remaining=Math.max(0,i.amount_cents-paid);
   if(remaining)entries.push({kind:'installment',id:i.id,type:'expense',description:i.description+' — '+i.number+'ª parcela',due_on:i.due_on,remaining_cents:remaining});
+ }
+ for(const invoice of cardInvoices(data)){
+  if(invoice.due_on>end)continue;
+  const payments=(data.invoicePayments??[]).filter(p=>Number(p.card_id)===invoice.card_id&&p.period===invoice.period&&p.paid_on<=end).reduce((s,p)=>s+Number(p.amount_cents),0);
+  // Invoice states from the current date may contain later payments; reconstruct at period end.
+  const legacy=invoice.items.reduce((s,i)=>{
+   const records=data.payments.filter(p=>Number(p.installment_id)===Number(i.id)&&p.paid_on<=end);
+   return s+(records.length?records.reduce((v,p)=>v+p.amount_cents,0):i.paid_on&&i.paid_on<=end?Number(i.amount_cents):0);
+  },0);
+  const remaining=Math.max(0,invoice.total_cents-payments-legacy);
+  if(remaining)entries.push({kind:'invoice',id:invoice.card_id*1000000+Number(invoice.period.replace('-','')),type:'expense',description:'Fatura '+invoice.card_name+' — '+invoice.period.slice(5)+'/'+invoice.period.slice(0,4),due_on:invoice.due_on,remaining_cents:remaining});
  }
  return entries.sort((a,b)=>a.due_on.localeCompare(b.due_on)||a.description.localeCompare(b.description,'pt-BR'));
 }
