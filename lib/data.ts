@@ -227,6 +227,23 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const amount=positive(payload.amount_cents);
    return updateDb('purchases',{description:payload.description,total_cents:amount,installments_count:1,method:'card',card_id:cardId,category_id:payload.category_id,budget_label_name:payload.budget_label_name,purchased_on:purchased,first_due_on:first});
   }
+  case 'purchase-edit': {
+   const purchaseId=id(payload.id),description=text(payload.description),purchased=date(payload.purchased_on),category=id(payload.category_id,false);
+   if(category){
+    const cat=db.prepare('SELECT type FROM categories WHERE id=?').get(category) as {type:string}|undefined;
+    if(!cat||cat.type!=='expense')throw Error('Escolha uma categoria de despesas.');
+   }
+   const original=db.prepare('SELECT id,purchased_on FROM purchases WHERE id=?').get(purchaseId) as {id:number;purchased_on:string}|undefined;
+   if(!original)throw Error('Compra não encontrada.');
+   ensureOpen(original.purchased_on);ensureOpen(purchased);
+   const closed=db.prepare('SELECT 1 FROM installments i JOIN month_closures m ON m.period=substr(i.due_on,1,7) WHERE i.purchase_id=? LIMIT 1').get(purchaseId);
+   if(closed)throw Error('Compra vinculada a mês fechado. Reabra o fechamento antes de editar.');
+   const payments=db.prepare('SELECT 1 FROM installments i JOIN payment_records r ON r.installment_id=i.id WHERE i.purchase_id=? LIMIT 1').get(purchaseId);
+   const invoicePaid=db.prepare("SELECT 1 FROM purchases p JOIN installments i ON i.purchase_id=p.id JOIN invoice_payments ip ON ip.card_id=p.card_id AND ip.period=substr(i.due_on,1,7) WHERE p.id=? LIMIT 1").get(purchaseId);
+   if(payments||invoicePaid)throw Error('Compra com pagamento registrado. O histórico está protegido.');
+   const label=category?resolveLabel(category,payload.budget_label_name):null;
+   return run('UPDATE purchases SET description=?,purchased_on=?,category_id=?,budget_label_id=? WHERE id=?',description,purchased,category,label,purchaseId);
+  }
   case 'purchases': {
    const method=name(payload.method);if(!['card','boleto'].includes(method))throw Error('Forma de pagamento inválida.');
    const card=method==='card'?id(payload.card_id):null;
@@ -422,6 +439,12 @@ export function removeDb(entity:string,idValue:number){
  if(entity==='transactions'){
   const row=db.prepare('SELECT date,completed_on FROM transactions WHERE id=?').get(idValue) as {date:string;completed_on:string|null}|undefined;
   if(row&&(closed(row.date.slice(0,7))||row.completed_on&&closed(row.completed_on.slice(0,7))))throw Error('Lançamento de mês fechado. Reabra antes de excluir.');
+ }
+ if(entity==='purchases'){
+  const purchase=db.prepare('SELECT purchased_on FROM purchases WHERE id=?').get(idValue) as {purchased_on:string}|undefined;
+  if(purchase&&closed(purchase.purchased_on.slice(0,7)))throw Error('Compra de mês fechado. Reabra o fechamento antes de excluir.');
+  if(db.prepare('SELECT 1 FROM installments WHERE purchase_id=? AND paid_on IS NOT NULL LIMIT 1').get(idValue))throw Error('Compra com parcela quitada. Não é possível apagar o histórico.');
+  if(db.prepare('SELECT 1 FROM payment_records r JOIN installments i ON i.id=r.installment_id WHERE i.purchase_id=? LIMIT 1').get(idValue))throw Error('Compra com pagamentos registrados. Não é possível excluir.');
  }
  if(entity==='purchases'&&db.prepare('SELECT 1 FROM installments i JOIN month_closures m ON m.period=substr(i.due_on,1,7) WHERE i.purchase_id=? LIMIT 1').get(idValue))throw Error('Compra possui parcelas em mês fechado.');
  if(entity==='purchases'&&db.prepare("SELECT 1 FROM purchases p JOIN invoice_payments ip ON ip.card_id=p.card_id JOIN installments i ON i.purchase_id=p.id AND substr(i.due_on,1,7)=ip.period WHERE p.id=? LIMIT 1").get(idValue))throw Error('Compra vinculada a fatura já paga.');
