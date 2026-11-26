@@ -50,6 +50,6 @@ export function filterAndSortPurchases<T extends Record<string,unknown>>(
     Number(a.total_cents)-Number(b.total_cents);
    // Stable deterministic order within the same month.
    return (direction==='desc'?-comparison:comparison)||
-    a.description.localeCompare(b.description,'pt-BR',{sensitivity:'base'})||Number(a.id)-Number(b.id);
+    String(a.description).localeCompare(String(b.description),'pt-BR',{sensitivity:'base'})||Number(a.id)-Number(b.id);
   });
 }
