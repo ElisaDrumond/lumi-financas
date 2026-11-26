@@ -113,9 +113,19 @@ export function monthlyForecast(data:FinanceData,period:string,account:string|nu
  }
  // The generated card statement replaces underlying card installments in cash forecasts.
  for(const invoice of cardInvoices(data)){
-  if(invoice.period!==period)continue;
   if(account!==''&&Number(invoice.account_id)!==Number(account))continue;
-  expense+=invoice.total_cents;
+  if(invoice.period===period){
+   // Payments made before the invoice month already affected the bank earlier.
+   const early=(data.invoicePayments??[]).filter(p=>Number(p.card_id)===invoice.card_id&&p.period===period&&p.paid_on<period+'-01').reduce((s,p)=>s+p.amount_cents,0);
+   expense+=Math.max(0,invoice.total_cents-early);
+  }
+ }
+ // A statement paid early is a bank outflow in the actual payment month,
+ // not again when its nominal due date arrives.
+ for(const p of data.invoicePayments??[]){
+  if(!p.paid_on.startsWith(period)||p.period<=period)continue;
+  if(account!==''&&Number(p.account_id)!==Number(account))continue;
+  expense+=p.amount_cents;
  }
  // Contributions attached to planned occurrences are already part of reserves.
  for(const m of data.goalMovements){
