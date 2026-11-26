@@ -17,7 +17,7 @@ export default function CardInvoices({data,refresh,period,account=''}:Props){
   if(account!==''&&Number(i.account_id)!==Number(account))return false;
   if(!period)return true; // Keep the complete invoice history in the Cards tab.
   const plan=obligationPlan(data,'invoice',invoiceRecordId(i.card_id,i.period));
-  if(plan)return plan.status==='scheduled'&&plan.target_period===period||i.status==='paid'&&i.period===period;
+  if(plan)return plan.status==='scheduled'&&!!plan.target_period&&plan.target_period<=period&&i.remaining_cents>0||i.status==='paid'&&i.period===period;
   return i.period===period||i.period<period&&i.remaining_cents>0;
  });
  const [active,setActive]=useState<string|null>(null);
