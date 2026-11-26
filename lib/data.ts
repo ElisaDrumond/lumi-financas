@@ -2,6 +2,7 @@ import {goalMovement} from './goals';
 import db from './db';
 import {ensureOccurrences, monthsAroundNow,forecastMonthsThrough,dateForPeriod} from './recurrings';
 import {cardInvoices,cardCommitment,firstCardDueOn} from './invoices';
+import {recalculateCardCycle} from './card-cycle';
 export type Entity = 'accounts' | 'categories' | 'cards' | 'transactions' | 'purchases' | 'installments' | 'goals';
 export function readAll(period?:string) {
  if(period&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))throw Error('Mes invalido.');
@@ -127,6 +128,10 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
     for(const item of updates)run('UPDATE categories SET color=? WHERE id=?',item.color,item.id);
     db.exec('COMMIT');return {lastInsertRowid:0};
    }catch(e){db.exec('ROLLBACK');throw e;}
+  }
+  case 'card-cycle-recalculate': {
+   const result=recalculateCardCycle(id(payload.card_id) as number);
+   return {lastInsertRowid:result.updated};
   }
   case 'card-edit': {
    const cardId=id(payload.id),closing=integer(payload.closing_day),due=integer(payload.due_day),limit=integer(payload.limit_cents);
