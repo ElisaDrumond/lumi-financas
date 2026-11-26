@@ -12,8 +12,8 @@ export type CardInvoice={
  * second expense/transaction is created. All dates are local ISO calendar days.
  */
 export function cardInvoices(data:InvoiceLedger):CardInvoice[]{
- const cards=new Map((data.cards??[]).map(c=>[Number(c.id),c]));
- const purchases=new Map((data.purchases??[]).map(p=>[Number(p.id),p]));
+ const cards=new Map<number,Row>((data.cards??[]).map(c=>[Number(c.id),c] as [number,Row]));
+ const purchases=new Map<number,Row>((data.purchases??[]).map(p=>[Number(p.id),p] as [number,Row]));
  const map=new Map<string,CardInvoice>();
  for(const i of data.installments){
   const purchase=purchases.get(Number(i.purchase_id));
@@ -41,7 +41,7 @@ export function cardInvoices(data:InvoiceLedger):CardInvoice[]{
   const invoice=map.get(p.card_id+'-'+p.period);
   if(invoice)invoice.paid_cents+=Number(p.amount_cents);
  }
- return [...map.values()].map(inv=>({
+ return [...map.values()].map((inv):CardInvoice=>({
   ...inv,remaining_cents:Math.max(0,inv.total_cents-inv.paid_cents),
   status:inv.paid_cents>=inv.total_cents?'paid':inv.paid_cents>0?'partial':'pending'
  })).sort((a,b)=>a.due_on.localeCompare(b.due_on)||a.card_name.localeCompare(b.card_name,'pt-BR'));

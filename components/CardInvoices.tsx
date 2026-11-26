@@ -1,10 +1,11 @@
 'use client';
 import {useMemo,useState} from 'react';
+import type {Row} from '@/lib/finance';
 import {CreditCard,Check,ChevronRight,Wallet} from 'lucide-react';
 import MoneyInput from './MoneyInput';
 import {cardInvoices,cardCommitment,type InvoiceLedger} from '@/lib/invoices';
 
-type Data=InvoiceLedger & {accounts:{id:number;name:string}[]};
+type Data=InvoiceLedger & {accounts:Row[]};
 type Props={data:Data;refresh:(period?:string)=>Promise<void>;period?:string;account?:string;};
 const money=(c:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format((c||0)/100);
 const today=()=>new Date().toLocaleDateString('en-CA');
