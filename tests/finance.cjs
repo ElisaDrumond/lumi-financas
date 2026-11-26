@@ -730,3 +730,23 @@ test('parcelas no cartão atravessam dezembro sem datas inválidas',()=>{
  assert.deepEqual(parts.map(i=>i.due_on),[year+'-01-17',year+'-02-17',year+'-03-17']);
  assert.deepEqual(cardInvoices(state).filter(i=>i.card_id===card).map(i=>i.period),[year+'-01',year+'-02',year+'-03']);
 });
+
+test('migração de pendências antigas preserva fechamento e passa a aceitar fatura',()=>{
+ const dbPath=path.join(directory,'legacy-invoice-pending.db');
+ const setup=`const {DatabaseSync}=require('node:sqlite');
+ const db=new DatabaseSync(process.env.LUMI_DB_PATH);
+ db.exec("PRAGMA foreign_keys=ON; CREATE TABLE month_closures(id INTEGER PRIMARY KEY,period TEXT NOT NULL UNIQUE);CREATE TABLE month_closure_pending(closure_id INTEGER NOT NULL REFERENCES month_closures(id) ON DELETE CASCADE,kind TEXT NOT NULL CHECK(kind IN ('occurrence','transaction','installment')),record_id INTEGER NOT NULL,type TEXT NOT NULL CHECK(type IN ('income','expense')),description TEXT NOT NULL,due_on TEXT NOT NULL,remaining_cents INTEGER NOT NULL CHECK(remaining_cents>0),PRIMARY KEY(closure_id,kind,record_id));CREATE INDEX idx_month_closure_pending_period ON month_closure_pending(closure_id);INSERT INTO month_closures(id,period) VALUES(1,'2025-01');INSERT INTO month_closure_pending VALUES(1,'transaction',42,'expense','Conta anterior','2025-01-10',3500);");
+ db.close();
+ require('./.test-build/db');
+ const assert=require('node:assert/strict');
+ const updated=require('./.test-build/db').default;
+ assert.equal(updated.prepare("SELECT remaining_cents FROM month_closure_pending WHERE kind='transaction'").get().remaining_cents,3500);
+ updated.prepare("INSERT INTO month_closure_pending VALUES(1,'invoice',202501,'expense','Fatura antiga','2025-01-17',8000)").run();
+ assert.equal(updated.prepare("SELECT COUNT(*) AS c FROM month_closure_pending").get().c,2);
+ assert.deepEqual(updated.prepare('PRAGMA foreign_key_check').all(),[]);
+ assert.equal(updated.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+ updated.close();console.log('ok');`;
+ assert.equal(execFileSync(process.execPath,['-e',setup],{cwd:process.cwd(),env:{...process.env,LUMI_DB_PATH:dbPath},encoding:'utf8'}).trim(),'ok');
+ const check=`const db=require('./.test-build/db').default;const assert=require('node:assert/strict');assert.equal(db.prepare('SELECT COUNT(*) AS c FROM month_closure_pending').get().c,2);console.log('ok');`;
+ assert.equal(execFileSync(process.execPath,['-e',check],{cwd:process.cwd(),env:{...process.env,LUMI_DB_PATH:dbPath},encoding:'utf8'}).trim(),'ok');
+});
