@@ -953,6 +953,20 @@ test('fechamento reagenda receitas, boleto e fatura sem transportar dívida para
  assert.equal(planningSummary(data,middle).toPay,20000);
  assert.equal(planningSummary(data,later).toPay,0);
  assert.equal(accountBalance(data,account),100000);
+ // Partial payment made in the reprogrammed month replaces the same portion
+ // of the forecast; it must never count as a second expense.
+ updateDb('invoice-payment',{card_id:card,period:old,amount_cents:10000,account_id:account,paid_on:middle+'-20',request_key:'reprogram-01'});
+ data=readAll(later);
+ assert.equal(monthlyForecast(data,middle).expense,10000);
+ assert.equal(planningSummary(data,middle).expense,20000);
+ assert.equal(planningSummary(data,middle).spent,10000);
+ assert.equal(accountBalance(data,account),90000);
+ updateDb('invoice-payment',{card_id:card,period:old,amount_cents:10000,account_id:account,paid_on:middle+'-20',request_key:'reprogram-02'});
+ data=readAll(later);
+ assert.equal(monthlyForecast(data,middle).expense,0);
+ assert.equal(planningSummary(data,middle).expense,20000);
+ assert.equal(planningSummary(data,middle).spent,20000);
+ assert.equal(accountBalance(data,account),80000);
  reopenMonth(old);
  data=readAll(later);
  assert.equal(data.obligationPlans.length,0);
