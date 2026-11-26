@@ -252,3 +252,8 @@
 .month-closing-budget-list>div>span{display:grid;gap:4px}
 .month-closing-budget-list>div>span:last-child{text-align:right}
 .month-closing-budget-list strong{font-size:12px;color:#594c6e}
+
+/* Category toolbar: exactly one palette action, with reliable mobile layout. */
+.category-header-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;flex-wrap:wrap}
+.category-header-actions .soft-btn{cursor:pointer;white-space:nowrap}
+@media(max-width:650px){.category-header-actions{justify-content:flex-start;width:100%}}
