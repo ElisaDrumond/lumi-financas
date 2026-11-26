@@ -257,3 +257,32 @@
 .category-header-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;flex-wrap:wrap}
 .category-header-actions .soft-btn{cursor:pointer;white-space:nowrap}
 @media(max-width:650px){.category-header-actions{justify-content:flex-start;width:100%}}
+
+/* Credit-card invoices and installment cashflow, separate from purchase expenses */
+.lumi-invoices{margin:20px 0 12px;padding:20px 22px;border-radius:22px;border:1px solid #e5def5;background:linear-gradient(115deg,rgba(255,250,255,.88),rgba(239,247,255,.8));display:grid;gap:16px;min-width:0}
+.lumi-invoices-title{display:flex;justify-content:space-between;align-items:center;gap:15px;color:#8870b0}
+.lumi-invoices-title h3{margin:0 0 6px;color:#493d5d;font-size:19px}
+.lumi-invoices-title p{color:#978ba5;font-size:12px;line-height:1.55;margin:0}
+.lumi-card-limits{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.lumi-card-limits>div{display:grid;gap:6px;padding:12px 14px;border:1px solid #e5def2;border-radius:14px;background:#fff9ffaf;font-size:12px;color:#75648a}
+.lumi-card-limits strong{color:#4b4161;font-size:14px}
+.lumi-invoice-list{display:grid;gap:10px}
+.lumi-invoice-row{border:1px solid #ece3f7;background:#fffaffba;border-radius:15px;overflow:hidden}
+.lumi-invoice-row>summary{list-style:none;display:flex;align-items:center;gap:12px;padding:14px 17px;cursor:pointer}
+.lumi-invoice-row>summary::-webkit-details-marker{display:none}
+.lumi-invoice-row>summary>svg{flex-shrink:0;color:#9776c9;transition:transform .2s}
+.lumi-invoice-row[open]>summary>svg{transform:rotate(90deg)}
+.lumi-invoice-row>summary>span{min-width:0;display:grid;gap:5px}
+.lumi-invoice-row>summary>span:nth-child(2){flex:1}
+.lumi-invoice-row strong{font-size:13px;color:#55486c}
+.lumi-invoice-row small{font-size:11px;color:#9a8da9}
+.lumi-invoice-amount{text-align:right}
+.lumi-invoice-details{border-top:1px solid #efe9f5;padding:12px 17px;display:grid;gap:11px}
+.lumi-invoice-details>div:not(.lumi-invoice-pay-actions){display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;color:#796c8c}
+.lumi-invoice-pay-form{margin-top:3px;padding:15px;border-radius:14px;background:rgba(244,239,255,.86);border:1px solid #e3d9f3;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.lumi-invoice-pay-form label{display:grid;gap:6px;color:#796989;font-size:11px;font-weight:650}
+.lumi-invoice-pay-form input,.lumi-invoice-pay-form select{min-width:0;width:100%;padding:10px;border:1px solid #ded5ef;border-radius:11px;background:white;color:#504462}
+.lumi-invoice-pay-form .error,.lumi-invoice-pay-actions{grid-column:1/-1}
+.lumi-invoice-pay-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-start}
+.lumi-invoice-empty{padding:20px;text-align:center;color:#978da8;font-size:12px}
+@media(max-width:760px){.lumi-invoices{padding:16px 13px}.lumi-invoice-pay-form{grid-template-columns:1fr}.lumi-invoice-row>summary{padding:12px;flex-wrap:wrap}.lumi-invoice-amount{margin-left:auto}}
