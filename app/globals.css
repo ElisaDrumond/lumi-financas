@@ -313,3 +313,14 @@
 .purchase-filter button.active{background:linear-gradient(120deg,#a58aee,#929ce8);color:white;box-shadow:0 4px 12px #aaa0dc2b}
 .purchase-filter button:focus-visible{outline:2px solid #8772d6;outline-offset:2px}
 @media(max-width:650px){.purchase-filter{width:100%}.purchase-filter button{flex:1;min-width:max-content;padding:8px}}
+
+/* Completion status and monthly due-date reference for purchase groups */
+.purchase-status-filter{background:#faf8ff}
+.installment-completed{background:linear-gradient(115deg,rgba(232,250,241,.72),rgba(248,248,255,.9));border-color:#d3ebdf}
+.installment-completed .installment-toggle{background:#e1f6eb;color:#429979}
+.purchase-status-tag{display:inline-flex;margin-top:8px;padding:5px 9px;border-radius:999px;font-weight:700;font-size:10px;line-height:1.2}
+.purchase-status-tag.is-completed{background:#def4e8;color:#39896d}
+.purchase-status-tag.is-open{background:#f3edff;color:#9375be}
+.installment-purchase-total .installment-month-reference{font-size:10px;margin-top:5px}
+.purchase-filter-empty{text-align:center;padding:28px 15px;font-size:13px;color:#9689a7}
+@media(max-width:650px){.purchase-status-filter{width:100%}.installment-purchase-total{max-width:100%}}
