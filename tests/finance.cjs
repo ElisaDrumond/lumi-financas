@@ -782,3 +782,22 @@ test('editar limite e ciclo do cartão preserva faturas existentes e usa novos d
  assert.equal(cardCommitment(state,card),45000);
  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
+
+test('compra no dia do fechamento entra na próxima fatura (dia anterior, fechamento e dia posterior)',()=>{
+ const {firstCardDueOn}=require('../.test-build/invoices');
+ // Fechamento 14 / vencimento 20: 13 entra na fatura atual, 14 e 15 na próxima.
+ assert.equal(firstCardDueOn('2026-11-13',14,20),'2026-11-20');
+ assert.equal(firstCardDueOn('2026-11-14',14,20),'2026-12-20');
+ assert.equal(firstCardDueOn('2026-11-15',14,20),'2026-12-20');
+ // Também respeita a virada do ano.
+ assert.equal(firstCardDueOn('2026-12-13',14,20),'2026-12-20');
+ assert.equal(firstCardDueOn('2026-12-14',14,20),'2027-01-20');
+ // Vencimento antes do fechamento exige avançar um ciclo adicional.
+ assert.equal(firstCardDueOn('2026-11-13',14,10),'2026-12-10');
+ assert.equal(firstCardDueOn('2026-11-14',14,10),'2027-01-10');
+ const account=add('accounts',{name:'Conta fechamento inclusivo',initial_balance:150000});
+ const card=add('cards',{name:'Cartão fechamento dia 14',limit_cents:80000,closing_day:14,due_day:20,account_id:account});
+ const purchase=add('transactions',{description:'Compra no fechamento',type:'expense',payment_method:'credit',amount_cents:7500,date:'2026-11-14',card_id:card});
+ const invoice=readAll('2026-12').installments.find(i=>i.purchase_id===purchase);
+ assert.equal(invoice.due_on,'2026-12-20');
+});
