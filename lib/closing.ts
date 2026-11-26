@@ -88,6 +88,21 @@ export function closeMonth(payload:Record<string,unknown>){
  if(payload.expected_spent_cents!==undefined&&Number(payload.expected_spent_cents)!==preview.flow.spent)throw Error('As despesas realizadas mudaram. Atualize a prévia.');
  const budgetSignature=(rows:typeof preview.budgets)=>rows.map(b=>[b.id,b.limit_cents,b.spent_cents].join(':')).join('|');
  if(payload.expected_budget_signature!==undefined&&String(payload.expected_budget_signature)!==budgetSignature(preview.budgets))throw Error('Os orçamentos mudaram durante a conferência. Atualize a prévia antes de fechar.');
+ const decisionsRaw=payload.decisions??preview.pending.map(p=>({kind:p.kind,id:p.id,status:'unscheduled'}));
+ if(!Array.isArray(decisionsRaw))throw Error('As decisões das pendências são inválidas.');
+ const available=new Map(preview.pending.map(p=>[p.kind+'-'+p.id,p]));
+ const decisions=decisionsRaw.map(raw=>{
+  if(!raw||typeof raw!=='object')throw Error('Decisão inválida.');
+  const row=raw as Record<string,unknown>,kind=String(row.kind),recordId=Number(row.id);
+  const found=available.get(kind+'-'+recordId);
+  if(!found)throw Error('A lista de pendências mudou. Atualize a prévia.');
+  const status=String(row.status);
+  if(!['scheduled','unscheduled','archived'].includes(status))throw Error('Selecione uma decisão válida.');
+  const target=status==='scheduled'?validPeriod(row.target_period):null;
+  if(target&&target<=period)throw Error('Para reagendar, escolha um mês posterior ao fechamento.');
+  return {kind,recordId,sourcePeriod:found.due_on.slice(0,7),status,target};
+ });
+ if(decisions.length!==preview.pending.length||new Set(decisions.map(d=>d.kind+'-'+d.recordId)).size!==decisions.length)throw Error('Revise todas as pendências antes de fechar.');
  const note=String(payload.notes??'').trim();
  if(note.length>500)throw Error('As observações devem ter no máximo 500 caracteres.');
  const checked=provided.map(x=>{
@@ -114,6 +129,9 @@ export function closeMonth(payload:Record<string,unknown>){
   for(const a of submitted)insertAccount.run(closureId,a.account_id,a.reconciled_cents,a.calculated_cents);
   const insertPending=db.prepare('INSERT INTO month_closure_pending(closure_id,kind,record_id,type,description,due_on,remaining_cents) VALUES(?,?,?,?,?,?,?)');
   for(const p of preview.pending)insertPending.run(closureId,p.kind,p.id,p.type,p.description,p.due_on,p.remaining_cents);
+  const saveDecision=db.prepare("INSERT INTO obligation_plans(kind,record_id,source_period,status,target_period) VALUES(?,?,?,?,?) ON CONFLICT(kind,record_id) DO UPDATE SET status=excluded.status,target_period=excluded.target_period,changed_at=CURRENT_TIMESTAMP");
+  for(const d of decisions)saveDecision.run(d.kind,d.recordId,d.sourcePeriod,d.status,d.target);
+
   const insertBudget=db.prepare('INSERT INTO month_closure_budgets(closure_id,budget_id,category_name,label_name,limit_cents,spent_cents,unused_cents,exceeded_cents) VALUES(?,?,?,?,?,?,?,?)');
   for(const b of preview.budgets)insertBudget.run(closureId,b.id,b.category_name,b.label_name,b.limit_cents,b.spent_cents,Math.max(0,b.remaining_cents),Math.max(0,-b.remaining_cents));
   db.exec('COMMIT');
