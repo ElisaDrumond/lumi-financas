@@ -83,7 +83,7 @@ export function carryoverItems(data:FinanceData,period:string,account:string|num
   const remaining=Math.max(0,i.amount_cents-paid);
   if(remaining)result.push({key:'installment-'+i.id,kind:'installment',id:i.id,description:i.description+' — '+i.number+'ª parcela',type:'expense',goal:false,due_on:i.due_on,account_id:owner,account_name:accountName(owner),amount_cents:i.amount_cents,paid_cents:paid,remaining_cents:remaining});
  }
- return result.filter(item=>!obligationPlan(data,item.kind,item.id)).sort((a,b)=>a.due_on.localeCompare(b.due_on)||a.key.localeCompare(b.key));
+ return result.filter(item=>{const plan=obligationPlan(data,item.kind,item.id);return !plan||plan.status==='scheduled'&&!!plan.target_period&&plan.target_period<period;}).sort((a,b)=>a.due_on.localeCompare(b.due_on)||a.key.localeCompare(b.key));
 }
 /** Monthly budget forecast: obligations belong to their original competence, while actual payments are reported by payment date. */
 export function monthlyForecast(data:FinanceData,period:string,account:string|number=''){
