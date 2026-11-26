@@ -844,3 +844,33 @@ test('recalcular fatura não altera compras com pagamentos já registrados',()=>
  assert.equal(cardInvoices(state).find(i=>i.card_id===card).remaining_cents,15000);
  assert.equal(accountBalance(state,account),95000);
 });
+
+test('editar compra e excluir parcelamento não pago preserva saldo, limite e histórico',()=>{
+ const {cardInvoices,cardCommitment}=require('../.test-build/invoices');
+ const {removeDb}=require('../.test-build/data');
+ const month=shifted(70);
+ const account=add('accounts',{name:'Conta manutenção de compras',initial_balance:300000});
+ const cat=add('categories',{name:'Categoria manutenção',type:'expense'});
+ const card=add('cards',{name:'Cartão manutenção',limit_cents:100000,closing_day:10,due_day:20,account_id:account});
+ const purchase=add('purchases',{description:'Compra errada',total_cents:25000,installments_count:2,method:'card',card_id:card,purchased_on:month+'-03',first_due_on:month+'-20',category_id:cat});
+ let state=readAll(month);
+ assert.equal(cardCommitment(state,card),25000);
+ updateDb('purchase-edit',{id:purchase,description:'Compra corrigida',purchased_on:month+'-04',category_id:cat});
+ state=readAll(month);
+ assert.equal(state.purchases.find(p=>p.id===purchase).description,'Compra corrigida');
+ assert.equal(state.purchases.find(p=>p.id===purchase).purchased_on,month+'-04');
+ assert.equal(state.installments.filter(i=>i.purchase_id===purchase).length,2);
+ assert.equal(cardCommitment(state,card),25000);
+ assert.equal(accountBalance(state,account),300000);
+ removeDb('purchases',purchase);
+ state=readAll(month);
+ assert.equal(state.purchases.some(p=>p.id===purchase),false);
+ assert.equal(state.installments.some(i=>i.purchase_id===purchase),false);
+ assert.equal(cardCommitment(state,card),0);
+ assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+ const kept=add('purchases',{description:'Compra paga preservada',total_cents:10000,installments_count:1,method:'card',card_id:card,purchased_on:month+'-05',first_due_on:month+'-20'});
+ add('invoice-payment',{card_id:card,period:month,amount_cents:2000,account_id:account,paid_on:month+'-20',request_key:key()});
+ assert.throws(()=>removeDb('purchases',kept),/fatura já paga/);
+ assert.throws(()=>updateDb('purchase-edit',{id:kept,description:'Não pode',purchased_on:month+'-06'}),/histórico está protegido/);
+ assert.equal(cardInvoices(readAll(month)).find(i=>i.card_id===card&&i.period===month).remaining_cents,8000);
+});
