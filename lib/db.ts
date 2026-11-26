@@ -293,6 +293,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS obligation_plans(
  status TEXT NOT NULL CHECK(status IN ('scheduled','unscheduled','archived')),
  target_period TEXT,
  changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ set_in_period TEXT,
  PRIMARY KEY(kind,record_id),
  CHECK((status='scheduled' AND target_period IS NOT NULL) OR (status!='scheduled' AND target_period IS NULL))
 );

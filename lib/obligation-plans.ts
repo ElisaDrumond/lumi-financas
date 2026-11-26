@@ -54,7 +54,8 @@ export function planForecastDelta(data:PlanData,period:string,account:string|num
   const destination=item.status==='scheduled'?item.target_period:null;
   const source=item.source_period;
   if(source===destination)continue;
-  if(source===period){
+  const sourceAlreadyClosed=(data as PlanData&{monthClosures?:Row[]}).monthClosures?.some(c=>c.period===source)??false;
+  if(source===period&&!sourceAlreadyClosed){
    if(item.type==='income')income-=item.remaining_cents;else expense-=item.remaining_cents;
   }
   if(destination===period){

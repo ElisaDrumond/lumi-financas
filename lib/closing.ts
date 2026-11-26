@@ -3,6 +3,7 @@ import {readAll} from './data';
 import {accountBalanceThrough,cashFlowForMonth,type FinanceData,type Row} from './finance';
 import {categoryBudgetSummary} from './budgets';
 import {cardInvoices} from './invoices';
+import {obligationPlan} from './obligation-plans';
 
 const validPeriod=(value:unknown)=>{
  const p=String(value??'');
@@ -52,7 +53,10 @@ function unresolved(data:Ledger,period:string):Pending[]{
   const remaining=Math.max(0,invoice.total_cents-payments-legacy);
   if(remaining)entries.push({kind:'invoice',id:invoice.card_id*1000000+Number(invoice.period.replace('-','')),type:'expense',description:'Fatura '+invoice.card_name+' — '+invoice.period.slice(5)+'/'+invoice.period.slice(0,4),due_on:invoice.due_on,remaining_cents:remaining});
  }
- return entries.sort((a,b)=>a.due_on.localeCompare(b.due_on)||a.description.localeCompare(b.description,'pt-BR'));
+ return entries.filter(item=>{
+  const plan=obligationPlan(data,item.kind,item.id);
+  return !plan||plan.status!=='archived'&&!(plan.status==='scheduled'&&!!plan.target_period&&plan.target_period>period);
+ }).sort((a,b)=>a.due_on.localeCompare(b.due_on)||a.description.localeCompare(b.description,'pt-BR'));
 }
 export function closingPreview(periodArg:unknown){
  const period=validPeriod(periodArg);
@@ -129,8 +133,8 @@ export function closeMonth(payload:Record<string,unknown>){
   for(const a of submitted)insertAccount.run(closureId,a.account_id,a.reconciled_cents,a.calculated_cents);
   const insertPending=db.prepare('INSERT INTO month_closure_pending(closure_id,kind,record_id,type,description,due_on,remaining_cents) VALUES(?,?,?,?,?,?,?)');
   for(const p of preview.pending)insertPending.run(closureId,p.kind,p.id,p.type,p.description,p.due_on,p.remaining_cents);
-  const saveDecision=db.prepare("INSERT INTO obligation_plans(kind,record_id,source_period,status,target_period) VALUES(?,?,?,?,?) ON CONFLICT(kind,record_id) DO UPDATE SET status=excluded.status,target_period=excluded.target_period,changed_at=CURRENT_TIMESTAMP");
-  for(const d of decisions)saveDecision.run(d.kind,d.recordId,d.sourcePeriod,d.status,d.target);
+  const saveDecision=db.prepare("INSERT INTO obligation_plans(kind,record_id,source_period,status,target_period,set_in_period) VALUES(?,?,?,?,?,?) ON CONFLICT(kind,record_id) DO UPDATE SET status=excluded.status,target_period=excluded.target_period,set_in_period=excluded.set_in_period,changed_at=CURRENT_TIMESTAMP");
+  for(const d of decisions)saveDecision.run(d.kind,d.recordId,d.sourcePeriod,d.status,d.target,period);
 
   const insertBudget=db.prepare('INSERT INTO month_closure_budgets(closure_id,budget_id,category_name,label_name,limit_cents,spent_cents,unused_cents,exceeded_cents) VALUES(?,?,?,?,?,?,?,?)');
   for(const b of preview.budgets)insertBudget.run(closureId,b.id,b.category_name,b.label_name,b.limit_cents,b.spent_cents,Math.max(0,b.remaining_cents),Math.max(0,-b.remaining_cents));
@@ -145,6 +149,7 @@ export function reopenMonth(periodArg:unknown){
  if(db.prepare('SELECT 1 FROM month_closures WHERE period>? LIMIT 1').get(period))throw Error('Reabra primeiro os meses mais recentes para preservar a ordem dos fechamentos.');
  db.exec('BEGIN IMMEDIATE');
  try{
+  db.prepare('DELETE FROM obligation_plans WHERE set_in_period=?').run(period);
   db.prepare('DELETE FROM month_closures WHERE id=?').run(row.id);
   db.exec('COMMIT');
   return {lastInsertRowid:row.id};
