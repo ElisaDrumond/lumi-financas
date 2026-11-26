@@ -200,6 +200,7 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
    const ledger=readAll(period);
    const invoice=cardInvoices(ledger).find(i=>i.card_id===cardId&&i.period===period);
    if(!invoice||!invoice.remaining_cents)throw Error('A fatura não existe ou já está paga.');
+   if(invoice.items.some(i=>String(i.purchased_on)>paid))throw Error('O pagamento não pode ser anterior à data das compras da fatura.');
    if(amount>invoice.remaining_cents)throw Error('O valor ultrapassa o saldo restante desta fatura.');
    const result=run('INSERT INTO invoice_payments(card_id,period,amount_cents,paid_on,account_id,request_key) VALUES(?,?,?,?,?,?)',cardId,period,amount,paid,account,requestKey);
    return result;

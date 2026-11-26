@@ -17,9 +17,10 @@ export default function CardInvoices({data,refresh,period,account=''}:Props){
  const [amount,setAmount]=useState('');
  const [paidOn,setPaidOn]=useState(today());
  const [source,setSource]=useState('');
+ const [requestKey,setRequestKey]=useState('');
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
  const open=(key:string,remaining:number,accountId:number|null)=>{
-  setActive(key);setAmount((remaining/100).toFixed(2));setPaidOn(today());setSource(String(accountId??''));setError('');
+  setActive(key);setAmount((remaining/100).toFixed(2));setPaidOn(today());setSource(String(accountId??''));setRequestKey(crypto.randomUUID());setError('');
  };
  const pay=async(e:React.FormEvent)=>{
   e.preventDefault();
@@ -30,7 +31,7 @@ export default function CardInvoices({data,refresh,period,account=''}:Props){
   setBusy(true);setError('');
   try{
    const response=await fetch('/api/invoice-payment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-    card_id:invoice.card_id,period:invoice.period,amount_cents:value,account_id:Number(source),paid_on:paidOn,request_key:crypto.randomUUID()
+    card_id:invoice.card_id,period:invoice.period,amount_cents:value,account_id:Number(source),paid_on:paidOn,request_key:requestKey
    })});
    const result=await response.json();
    if(!response.ok)throw Error(result.error||'Falha ao pagar a fatura.');
