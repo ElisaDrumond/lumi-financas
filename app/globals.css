@@ -286,3 +286,10 @@
 .lumi-invoice-pay-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-start}
 .lumi-invoice-empty{padding:20px;text-align:center;color:#978da8;font-size:12px}
 @media(max-width:760px){.lumi-invoices{padding:16px 13px}.lumi-invoice-pay-form{grid-template-columns:1fr}.lumi-invoice-row>summary{padding:12px;flex-wrap:wrap}.lumi-invoice-amount{margin-left:auto}}
+
+.credit-transactions-fold{margin-top:25px;border-top:1px solid #ece4f4;padding-top:17px}
+.credit-transactions-fold>summary{list-style:none;display:flex;align-items:center;gap:10px;font-size:15px;font-weight:750;color:#594a71;cursor:pointer}
+.credit-transactions-fold>summary::-webkit-details-marker{display:none}
+.credit-transactions-fold>summary svg{color:#9481c6}
+.credit-transactions-fold>summary .pill{margin-left:6px}
+.credit-transactions-fold .footnote{color:#998da5;margin:13px 0}
