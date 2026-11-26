@@ -3,6 +3,7 @@ import db from './db';
 import {ensureOccurrences, monthsAroundNow,forecastMonthsThrough,dateForPeriod} from './recurrings';
 import {cardInvoices,cardCommitment,firstCardDueOn} from './invoices';
 import {recalculateCardCycle} from './card-cycle';
+import {obligations} from './obligation-plans';
 export type Entity = 'accounts' | 'categories' | 'cards' | 'transactions' | 'purchases' | 'installments' | 'goals';
 export function readAll(period?:string) {
  if(period&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))throw Error('Mes invalido.');
@@ -129,6 +130,20 @@ export function updateDb(entity: string, payload: Record<string,unknown>) {
     for(const item of updates)run('UPDATE categories SET color=? WHERE id=?',item.color,item.id);
     db.exec('COMMIT');return {lastInsertRowid:0};
    }catch(e){db.exec('ROLLBACK');throw e;}
+  }
+  case 'obligation-plan': {
+   const kind=name(payload.kind),recordId=id(payload.id);
+   if(!['occurrence','transaction','installment','invoice'].includes(kind))throw Error('Tipo de pendência inválido.');
+   const state=readAll();
+   const obligation=obligations(state).find(o=>o.kind===kind&&o.id===recordId);
+   if(!obligation)throw Error('Pendência não encontrada ou já quitada.');
+   if(!db.prepare('SELECT 1 FROM month_closures WHERE period>=? LIMIT 1').get(obligation.source_period))throw Error('Esta pendência deve ser revisada durante a conciliação antes de reprogramar.');
+   const status=name(payload.status);
+   if(!['scheduled','unscheduled','archived'].includes(status))throw Error('Escolha uma decisão válida.');
+   const target=status==='scheduled'?budgetPeriod(payload.target_period):null;
+   if(target&&target<=obligation.source_period)throw Error('Escolha um mês posterior ao vencimento original.');
+   if(target&&db.prepare('SELECT 1 FROM month_closures WHERE period=?').get(target))throw Error('Não é possível reagendar para um mês já fechado.');
+   return run("INSERT INTO obligation_plans(kind,record_id,source_period,status,target_period) VALUES(?,?,?,?,?) ON CONFLICT(kind,record_id) DO UPDATE SET status=excluded.status,target_period=excluded.target_period,changed_at=CURRENT_TIMESTAMP",kind,recordId,obligation.source_period,status,target);
   }
   case 'card-cycle-recalculate': {
    const result=recalculateCardCycle(id(payload.card_id) as number);
