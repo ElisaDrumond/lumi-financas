@@ -244,3 +244,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS month_closure_budgets (
  exceeded_cents INTEGER NOT NULL,
  PRIMARY KEY(closure_id,category_name,label_name)
 );`);
+
+/** Statement payments are bank movements, NOT additional expenses. */
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_payments (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ card_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE RESTRICT,
+ period TEXT NOT NULL,
+ amount_cents INTEGER NOT NULL CHECK(amount_cents>0),
+ paid_on TEXT NOT NULL,
+ account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+ request_key TEXT NOT NULL UNIQUE
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_payments_card_month ON invoice_payments(card_id,period);
+CREATE INDEX IF NOT EXISTS idx_invoice_payments_date ON invoice_payments(paid_on);`);
