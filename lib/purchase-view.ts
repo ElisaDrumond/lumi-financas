@@ -36,7 +36,7 @@ export function purchaseViews(data:InvoiceLedger):Map<number,PurchaseView>{
  }
  return result;
 }
-export function filterAndSortPurchases<T extends {id:number;method:string;description:string;total_cents:number}>(
+export function filterAndSortPurchases<T extends Record<string,unknown>>(
  purchases:T[],views:Map<number,PurchaseView>,method:'all'|'card'|'other',
  status:'all'|'open'|'completed',sort:'date-asc'|'date-desc'|'name-asc'|'name-desc'|'amount-asc'|'amount-desc'
 ):T[]{
@@ -46,7 +46,7 @@ export function filterAndSortPurchases<T extends {id:number;method:string;descri
   .sort((a,b)=>{
    const dateA=views.get(Number(a.id))?.referenceMonth??'',dateB=views.get(Number(b.id))?.referenceMonth??'';
    const comparison=field==='date'?dateA.localeCompare(dateB):
-    field==='name'?a.description.localeCompare(b.description,'pt-BR',{sensitivity:'base'}):
+    field==='name'?String(a.description).localeCompare(String(b.description),'pt-BR',{sensitivity:'base'}):
     Number(a.total_cents)-Number(b.total_cents);
    // Stable deterministic order within the same month.
    return (direction==='desc'?-comparison:comparison)||
