@@ -293,3 +293,7 @@
 .credit-transactions-fold>summary svg{color:#9481c6}
 .credit-transactions-fold>summary .pill{margin-left:6px}
 .credit-transactions-fold .footnote{color:#998da5;margin:13px 0}
+
+/* Editing and deleting a credit card share the header actions cleanly. */
+.card-top-actions{display:flex;align-items:center;gap:7px}
+.card-top-actions button{flex-shrink:0}

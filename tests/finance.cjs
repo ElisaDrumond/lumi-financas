@@ -750,3 +750,35 @@ test('migração de pendências antigas preserva fechamento e passa a aceitar fa
  const check=`const db=require('./.test-build/db').default;const assert=require('node:assert/strict');assert.equal(db.prepare('SELECT COUNT(*) AS c FROM month_closure_pending').get().c,2);console.log('ok');`;
  assert.equal(execFileSync(process.execPath,['-e',check],{cwd:process.cwd(),env:{...process.env,LUMI_DB_PATH:dbPath},encoding:'utf8'}).trim(),'ok');
 });
+
+test('editar limite e ciclo do cartão preserva faturas existentes e usa novos dias em compras futuras',()=>{
+ const {cardInvoices,cardCommitment,firstCardDueOn}=require('../.test-build/invoices');
+ const month=shifted(44),next=shifted(45);
+ const account=add('accounts',{name:'Conta edição de cartão',initial_balance:100000});
+ const card=add('cards',{name:'Cartão editável',limit_cents:100000,closing_day:10,due_day:17,account_id:account});
+ const purchase=add('purchases',{description:'Compra anterior à edição',method:'card',card_id:card,total_cents:35000,installments_count:1,purchased_on:month+'-05',first_due_on:month+'-17'});
+ let state=readAll(month);
+ const oldInvoice=cardInvoices(state).find(i=>i.card_id===card&&i.period===month);
+ assert.equal(oldInvoice.due_on,month+'-17');
+ assert.equal(cardCommitment(state,card),35000);
+ assert.throws(()=>updateDb('card-edit',{id:card,limit_cents:34999,closing_day:20,due_day:25}),/menor que o valor já comprometido/);
+ assert.throws(()=>updateDb('card-edit',{id:card,limit_cents:100000,closing_day:29,due_day:25}),/dias de 1 a 28/);
+ assert.throws(()=>updateDb('card-edit',{id:999999,limit_cents:100000,closing_day:20,due_day:25}),/não encontrado/);
+ add('card-edit',{id:card,limit_cents:120000,closing_day:20,due_day:25});
+ state=readAll(month);
+ const changed=state.cards.find(c=>c.id===card);
+ assert.equal(changed.limit_cents,120000);
+ assert.equal(changed.closing_day,20);
+ assert.equal(changed.due_day,25);
+ assert.equal(cardInvoices(state).find(i=>i.card_id===card&&i.period===month).due_on,month+'-17');
+ assert.equal(cardCommitment(state,card),35000);
+ assert.equal(accountBalance(state,account),100000);
+ const newDue=firstCardDueOn(next+'-10',changed.closing_day,changed.due_day);
+ assert.equal(newDue,next+'-25');
+ const future=add('transactions',{type:'expense',description:'Compra nova após editar cartão',amount_cents:10000,date:next+'-10',payment_method:'credit',card_id:card});
+ state=readAll(next);
+ assert.equal(state.installments.find(i=>i.purchase_id===future).due_on,next+'-25');
+ assert.equal(cardInvoices(state).find(i=>i.card_id===card&&i.period===month).due_on,month+'-17');
+ assert.equal(cardCommitment(state,card),45000);
+ assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+});
