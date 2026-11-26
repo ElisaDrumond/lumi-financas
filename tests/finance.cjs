@@ -674,3 +674,46 @@ test('compra parcelada no crédito compromete valor integral e gera faturas mens
  assert.equal(monthlyForecast(state,month,account).expense>=30000,true);
  assert.equal(state.purchases.filter(p=>p.id===purchase).length,1);
 });
+
+test('pagamento antecipado da fatura altera somente o mês em que o dinheiro saiu',()=>{
+ const {cardInvoices}=require('../.test-build/invoices');
+ const month=shifted(37);
+ const next=shifted(38);
+ const account=add('accounts',{name:'Banco pagamento antecipado',initial_balance:100000});
+ const card=add('cards',{name:'Crédito antecipado',limit_cents:100000,closing_day:10,due_day:17,account_id:account});
+ add('purchases',{description:'Compra em um mês para pagar no próximo',total_cents:18000,installments_count:1,method:'card',card_id:card,purchased_on:month+'-18',first_due_on:next+'-17'});
+ let state=readAll(next);
+ assert.equal(cardInvoices(state).find(i=>i.card_id===card).period,next);
+ assert.equal(monthlyForecast(state,month,account).expense,0);
+ assert.equal(monthlyForecast(state,next,account).expense,18000);
+ const openingBefore=planningSummary(state,next,account).openingBalance;
+ add('invoice-payment',{card_id:card,period:next,account_id:account,amount_cents:18000,paid_on:month+'-25',request_key:key()});
+ state=readAll(next);
+ assert.equal(monthlyForecast(state,month,account).expense,18000);
+ assert.equal(monthlyForecast(state,next,account).expense,0);
+ assert.equal(planningSummary(state,next,account).openingBalance,openingBefore-18000);
+ assert.equal(planningSummary(state,next,account).projected,planningSummary(readAll(month),month,account).projected);
+ assert.equal(accountBalance(state,account),82000);
+});
+test('fechamento inclui fatura não paga e pagamento posterior reduz caixa do mês seguinte',()=>{
+ const {closingPreview,closeMonth,reopenMonth}=require('../.test-build/closing');
+ const {cardInvoices}=require('../.test-build/invoices');
+ const old=shifted(-8),next=shifted(-7);
+ const account=add('accounts',{name:'Banco fatura atrasada',initial_balance:50000});
+ const card=add('cards',{name:'Cartão fatura atrasada',limit_cents:60000,closing_day:10,due_day:17,account_id:account});
+ add('purchases',{description:'Compra em cartão antes do fechamento',method:'card',card_id:card,total_cents:20000,installments_count:1,purchased_on:old+'-02',first_due_on:old+'-17'});
+ const preview=closingPreview(old);
+ assert.ok(preview.pending.some(p=>p.kind==='invoice'&&p.remaining_cents===20000));
+ const accounts=preview.accounts.map(a=>({account_id:a.id,reconciled_cents:a.calculated_cents,expected_calculated_cents:a.calculated_cents}));
+ closeMonth({period:old,accounts});
+ let state=readAll(next);
+ assert.equal(planningSummary(state,next,account).openingBalance,50000);
+ const noPayment=planningSummary(state,next,account).projected;
+ add('invoice-payment',{card_id:card,period:old,paid_on:next+'-05',account_id:account,amount_cents:20000,request_key:key()});
+ state=readAll(next);
+ assert.equal(cardInvoices(state).find(i=>i.card_id===card&&i.period===old).status,'paid');
+ assert.equal(accountBalance(state,account),30000);
+ assert.equal(planningSummary(state,next,account).projected,noPayment-20000);
+ assert.equal(cashFlowForMonth(state,next,account).spent,20000);
+ reopenMonth(old);
+});
