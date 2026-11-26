@@ -207,7 +207,8 @@ export function planningSummary(data:FinanceData,period:string,account:string|nu
  const cash=(type:string)=>data.transactions.filter(t=>(t.completed_on||t.date).startsWith(period)&&t.status!=='planned'&&t.type===type&&sameAccount(t,account)&&!(data.transactionPayments??[]).some(p=>p.transaction_id===t.id)).reduce((s,t)=>s+(t.actual_cents??t.amount_cents),0)
  + (data.transactionPayments??[]).filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)&&data.transactions.find(t=>t.id===p.transaction_id)?.type===type).reduce((s,p)=>s+p.amount_cents,0)
  +data.payments.filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)).reduce((s,p)=>{const o=data.occurrences.find(o=>o.id===p.occurrence_id);return s+((o?.type||'expense')===type?p.amount_cents:0)},0)
- +(type==='expense'?data.installments.filter(i=>i.paid_on?.startsWith(period)&&sameAccount(i,account)&&!data.payments.some(p=>p.installment_id===i.id)).reduce((s,i)=>s+i.amount_cents,0):0);
+ +(type==='expense'?data.installments.filter(i=>i.paid_on?.startsWith(period)&&sameAccount(i,account)&&!data.payments.some(p=>p.installment_id===i.id)).reduce((s,i)=>s+i.amount_cents,0):0)
+ +(type==='expense'?(data.invoicePayments??[]).filter(p=>p.paid_on.startsWith(period)&&sameAccount(p,account)).reduce((s,p)=>s+p.amount_cents,0):0);
  const goalOut=data.goalMovements.filter(m=>m.moved_on.startsWith(period)&&sameAccount(m,account)).reduce((s,m)=>s+(m.direction==='deposit'?1:-1)*m.amount_cents,0);
  const cardPurchaseIds=new Set((data.purchases??[]).filter(p=>p.method==='card').map(p=>Number(p.id)));
  const invoiceToPay=cardInvoices(data).filter(i=>i.period===period&&(account===''||Number(i.account_id)===Number(account))).reduce((s,i)=>s+i.remaining_cents,0);

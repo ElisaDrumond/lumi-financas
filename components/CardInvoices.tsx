@@ -39,7 +39,7 @@ export default function CardInvoices({data,refresh,period,account=''}:Props){
  };
  return <section className="lumi-invoices">
   <div className="lumi-invoices-title"><div><h3>Faturas dos cartões</h3><p>Faturas previstas geradas automaticamente pelas compras e parcelas. O banco só é descontado no pagamento.</p></div><CreditCard size={23}/></div>
-  {data.cards?.length>0&&!period&&<div className="lumi-card-limits">{data.cards.map(card=><div key={card.id}><strong>{card.name}</strong><span>Limite total: {money(card.limit_cents)}</span><span>Comprometido: {money(cardCommitment(data,Number(card.id)))}</span><span>Disponível: {money(card.limit_cents-cardCommitment(data,Number(card.id)))}</span></div>)}</div>}
+  {(data.cards??[]).length>0&&!period&&<div className="lumi-card-limits">{(data.cards??[]).map(card=><div key={card.id}><strong>{card.name}</strong><span>Limite total: {money(card.limit_cents)}</span><span>Comprometido: {money(cardCommitment(data,Number(card.id)))}</span><span>Disponível: {money(card.limit_cents-cardCommitment(data,Number(card.id)))}</span></div>)}</div>}
   <div className="lumi-invoice-list">{filtered.map(invoice=><details key={invoice.key} className="lumi-invoice-row">
    <summary><ChevronRight size={16}/><span><strong>{invoice.card_name} · {invoice.period.slice(5)}/{invoice.period.slice(0,4)}</strong><small>Vencimento {new Date(invoice.due_on+'T12:00:00').toLocaleDateString('pt-BR')} · {invoice.items.length} parcela(s)</small></span><span className="lumi-invoice-amount"><strong>{money(invoice.remaining_cents)}</strong><small>{invoice.status==='paid'?'Paga':invoice.status==='partial'?'Parcialmente paga':'A pagar'}</small></span></summary>
    <div className="lumi-invoice-details">
