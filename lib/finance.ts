@@ -248,8 +248,16 @@ export function expenseByCategory(data:FinanceData & {categories?:Row[];purchase
  };
  for(const o of data.occurrences)if(o.period===period&&o.type==='expense'&&!o.goal_id&&o.status!=='cancelled'&&sameAccount(o,account))add(o.category_id,o.amount_cents);
  for(const t of data.transactions)if(t.date.startsWith(period)&&t.type==='expense'&&sameAccount(t,account))add(t.category_id,t.status==='planned'?t.amount_cents:(t.actual_cents??t.amount_cents));
+ // Credit purchases are categorized when bought; the statement is not a new expense.
+ for(const purchase of data.purchases??[]){
+  if(purchase.method==='card'&&purchase.purchased_on.startsWith(period)){
+   const card=data.cards?.find(c=>Number(c.id)===Number(purchase.card_id));
+   if(account===''||card?.account_id!=null&&Number(card.account_id)===Number(account))add(purchase.category_id,purchase.total_cents);
+  }
+ }
  for(const i of data.installments)if(i.due_on.startsWith(period)){
   const purchase=data.purchases?.find(p=>p.id===i.purchase_id);
+  if(purchase?.method==='card')continue;
   const owner=i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id;
   if(account===''||owner!=null&&Number(owner)===Number(account))add(purchase?.category_id,i.amount_cents);
  }
