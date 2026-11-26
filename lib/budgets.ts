@@ -48,11 +48,18 @@ export function categoryBudgetSummary(data:BudgetData,period:string,account:stri
    const i=installments.get(Number(p.installment_id));
    if(i){
     const purchase=purchases.get(Number(i.purchase_id));
+    if(purchase?.method==='card')continue;
     add(purchase?.category_id,purchase?.budget_label_id,'installment-payment-'+p.id,i.description+' — '+i.number+'ª parcela',p.paid_on,p.amount_cents);
    }
   }
  }
+ // Credit purchases consume category budgets in their purchase month, not
+ // when their monthly statement is paid. Their invoice payment is cashflow only.
+ for(const p of data.purchases??[]){
+  if(p.method==='card')add(p.category_id,p.budget_label_id,'credit-purchase-'+p.id,p.description,p.purchased_on,p.total_cents);
+ }
  for(const i of data.installments){
+  if((data.purchases??[]).some(p=>Number(p.id)===Number(i.purchase_id)&&p.method==='card'))continue;
   if(!i.paid_on||data.payments.some(p=>Number(p.installment_id)===Number(i.id))||!accountMatches(accountsForInstallment(i)))continue;
   const purchase=purchases.get(Number(i.purchase_id));
   add(purchase?.category_id,purchase?.budget_label_id,'installment-'+i.id,i.description+' — '+i.number+'ª parcela',i.paid_on,i.amount_cents);
@@ -108,9 +115,13 @@ export function monthlyBudgetImpact(data:BudgetData,period:string,account:string
   const paid=transactionPaid(Number(t.id));
   cover(t.category_id,t.budget_label_id,t.status==='completed'?(paid||t.actual_cents||t.amount_cents):t.amount_cents);
  }
+ for(const p of data.purchases??[]){
+  if(p.method==='card'&&p.purchased_on.startsWith(period))cover(p.category_id,p.budget_label_id,p.total_cents);
+ }
  for(const i of data.installments){
   if(!i.due_on.startsWith(period))continue;
   const purchase=(data.purchases??[]).find(p=>Number(p.id)===Number(i.purchase_id));
+  if(purchase?.method==='card')continue;
   const paid=installmentPaid(Number(i.id));
   cover(purchase?.category_id,purchase?.budget_label_id,i.paid_on&&paid>0?paid:i.amount_cents);
  }
