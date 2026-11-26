@@ -1,10 +1,12 @@
 import {goalMovement} from './goals';
 import db from './db';
-import {ensureOccurrences, monthsAroundNow,dateForPeriod} from './recurrings';
+import {ensureOccurrences, monthsAroundNow,forecastMonthsThrough,dateForPeriod} from './recurrings';
 export type Entity = 'accounts' | 'categories' | 'cards' | 'transactions' | 'purchases' | 'installments' | 'goals';
 export function readAll(period?:string) {
  if(period&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))throw Error('Mes invalido.');
- ensureOccurrences([...monthsAroundNow(),...(period?[period]:[])]);
+ // A direct jump must calculate exactly the same cumulative balance as visiting
+ // every intermediate month. Never rely on previously viewed months.
+ ensureOccurrences([...new Set([...monthsAroundNow(),...(period?forecastMonthsThrough(period):[]),...(period?[period]:[])])]);
  const query = (sql:string) => db.prepare(sql).all().map(row => ({...row}));
  return {
   accounts: query('SELECT * FROM accounts ORDER BY id DESC'),

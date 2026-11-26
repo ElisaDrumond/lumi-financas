@@ -22,6 +22,21 @@ export function ensureOccurrences(periods:string[]) {
   db.exec('COMMIT');
  }catch(error){db.exec('ROLLBACK');throw error;}
 }
+/** Materialize every month needed for a forecast, regardless of navigation history.
+ * Active recurring definitions start in their configured month, and
+ * INSERT OR IGNORE preserves existing paid/customized occurrences.
+ */
+export function forecastMonthsThrough(target:string):string[]{
+ const earliest=db.prepare("SELECT MIN(start_on) AS start_on FROM recurrings WHERE status='active' AND substr(start_on,1,7)<=?").get(target) as {start_on:string|null};
+ if(!earliest.start_on)return [];
+ const start=earliest.start_on.slice(0,7);
+ const [sy,sm]=start.split('-').map(Number);
+ const [ty,tm]=target.split('-').map(Number);
+ const count=(ty-sy)*12+(tm-sm);
+ // Guard unreasonable accidental dates from generating an unbounded history.
+ if(count<0||count>1200)throw Error('Período muito distante do início das recorrências (mais de 100 anos).');
+ return Array.from({length:count+1},(_,i)=>new Date(Date.UTC(sy,sm-1+i,1)).toISOString().slice(0,7));
+}
 export function monthsAroundNow() {
  const now=new Date();const months:string[]=[];
  for(let offset=-12;offset<=12;offset++) {
