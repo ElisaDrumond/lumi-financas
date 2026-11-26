@@ -88,7 +88,7 @@ export function closeMonth(payload:Record<string,unknown>){
  if(payload.expected_spent_cents!==undefined&&Number(payload.expected_spent_cents)!==preview.flow.spent)throw Error('As despesas realizadas mudaram. Atualize a prévia.');
  const budgetSignature=(rows:typeof preview.budgets)=>rows.map(b=>[b.id,b.limit_cents,b.spent_cents].join(':')).join('|');
  if(payload.expected_budget_signature!==undefined&&String(payload.expected_budget_signature)!==budgetSignature(preview.budgets))throw Error('Os orçamentos mudaram durante a conferência. Atualize a prévia antes de fechar.');
- const decisionsRaw=payload.decisions??preview.pending.map(p=>({kind:p.kind,id:p.id,status:'unscheduled'}));
+ const decisionsRaw=payload.decisions??[];
  if(!Array.isArray(decisionsRaw))throw Error('As decisões das pendências são inválidas.');
  const available=new Map(preview.pending.map(p=>[p.kind+'-'+p.id,p]));
  const decisions=decisionsRaw.map(raw=>{
@@ -102,7 +102,7 @@ export function closeMonth(payload:Record<string,unknown>){
   if(target&&target<=period)throw Error('Para reagendar, escolha um mês posterior ao fechamento.');
   return {kind,recordId,sourcePeriod:found.due_on.slice(0,7),status,target};
  });
- if(decisions.length!==preview.pending.length||new Set(decisions.map(d=>d.kind+'-'+d.recordId)).size!==decisions.length)throw Error('Revise todas as pendências antes de fechar.');
+ if(payload.decisions!==undefined&&(decisions.length!==preview.pending.length||new Set(decisions.map(d=>d.kind+'-'+d.recordId)).size!==decisions.length))throw Error('Revise todas as pendências antes de fechar.');
  const note=String(payload.notes??'').trim();
  if(note.length>500)throw Error('As observações devem ter no máximo 500 caracteres.');
  const checked=provided.map(x=>{
