@@ -3,6 +3,7 @@ import MoneyInput from './MoneyInput';
 import FinancialSummary from './FinancialSummary';
 import MonthClosing from './MonthClosing';
 import MonthlyBudgets from './MonthlyBudgets';
+import CardInvoices from './CardInvoices';
 import ExpenseCategoryChart from './ExpenseCategoryChart';
 import CategoryLabel from './CategoryLabel';
 import MonthPicker from './MonthPicker';
@@ -13,7 +14,7 @@ import {planningSummary,carryoverItems,expenseByCategory,sameAccount,FinanceData
 import {useMemo,useState} from 'react';
 import {Plus,Check,Edit2,Pause,Play,OctagonX,CalendarClock,RefreshCw,ChevronRight} from 'lucide-react';
 type Row=Record<string,any>;
-type Props={data:FinanceData&{accounts:Row[],categories:Row[],recurrings:Row[],occurrences:Row[],payments:Row[],transactions:Row[],installments:Row[],purchases:Row[],monthClosures:Row[],monthClosureAccounts:Row[],monthClosurePending:Row[],monthClosureBudgets:Row[],categoryBudgets:Row[],categoryBudgetMonths:Row[],budgetLabels:Row[]},refresh:(period?:string)=>Promise<void>};
+type Props={data:FinanceData&{accounts:Row[],categories:Row[],recurrings:Row[],occurrences:Row[],payments:Row[],invoicePayments:Row[],transactions:Row[],installments:Row[],purchases:Row[],monthClosures:Row[],monthClosureAccounts:Row[],monthClosurePending:Row[],monthClosureBudgets:Row[],categoryBudgets:Row[],categoryBudgetMonths:Row[],budgetLabels:Row[]},refresh:(period?:string)=>Promise<void>};
 const money=(n:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format((n||0)/100);
 const iso=()=>new Date().toLocaleDateString('en-CA');
 const toCents=(v:string)=>Math.round(Number(v.replace(',','.'))*100);
@@ -70,7 +71,7 @@ export default function Planning({data,refresh}:Props){
  const overdue=useMemo(()=>carryoverItems(data,period,account),[data,period,account]);
  const carried=useMemo(()=>overdue.filter(x=>x.type==='expense'&&typeMatches(x)),[overdue,typeFilter]);
  const overdueReceipts=useMemo(()=>overdue.filter(x=>x.type==='income'&&typeMatches(x)),[overdue,typeFilter]);
- const installments=useMemo(()=>typeFilter==='income'?[]:data.installments.filter(i=>i.due_on.startsWith(period)&& (account===''||Number(i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id)===Number(account))),[data,period,account,typeFilter]);
+ const installments=useMemo(()=>typeFilter==='income'?[]:data.installments.filter(i=>i.method!=='card'&&i.due_on.startsWith(period)&& (account===''||Number(i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id)===Number(account))),[data,period,account,typeFilter]);
  const installmentPayment=(i:Row)=>data.payments.filter(p=>p.installment_id===i.id).reduce((sum,p)=>sum+p.amount_cents,0);
  const installmentOwner=(i:Row)=>i.account_id??data.cards?.find(c=>c.id===i.card_id)?.account_id??data.payments.find(p=>p.installment_id===i.id)?.account_id??null;
  const launchInstallment=(i:Row)=>{const owner=installmentOwner(i);const paid=installmentPayment(i);launchCarryover({key:'installment-'+i.id,kind:'installment',id:i.id,description:i.description+' — '+i.number+'ª parcela',type:'expense',goal:false,due_on:i.due_on,account_id:owner,account_name:data.accounts.find(a=>a.id===owner)?.name||'Selecione a conta',amount_cents:i.amount_cents,paid_cents:paid,remaining_cents:Math.max(0,i.amount_cents-paid)});};
@@ -87,6 +88,7 @@ export default function Planning({data,refresh}:Props){
    <div className="planning-toolbar"><label>Mês de referência <MonthPicker value={period} onChange={p=>{setPeriod(p);refresh(p).catch(()=>setErr('Falha ao carregar o mês.'))}}/></label><label>Conta <select aria-label="Filtrar conta" value={account} onChange={e=>setAccount(e.target.value)}><option value="">Todas as contas</option>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><div className="finance-type-filter" role="group" aria-label="Filtrar receitas e despesas do planejamento">{(['all','income','expense'] as const).map(kind=><button key={kind} type="button" aria-pressed={typeFilter===kind} className={typeFilter===kind?'active':''} onClick={()=>setTypeFilter(kind)}>{kind==='all'?'Todos':kind==='income'?'Receitas':'Despesas'}</button>)}</div><span className="pill">{items.length} ocorrências neste mês</span></div>
    <FinancialSummary summary={sums}/>
    <MonthlyBudgets data={data} period={period} account="" refresh={refresh}/>
+   <CardInvoices data={data} period={period} account={account} refresh={refresh}/>
    <MonthClosing period={period} refresh={refresh} closures={data.monthClosures||[]} closureAccounts={data.monthClosureAccounts||[]} closurePending={data.monthClosurePending||[]} closureBudgets={data.monthClosureBudgets||[]}/>
    <ExpenseCategoryChart items={expenseChart} period={period}/>
    <details className="planning-fold" open>
@@ -109,7 +111,7 @@ export default function Planning({data,refresh}:Props){
    </details>
    <details className="planning-fold" open>
     {sectionTitle('Parcelas deste mês',installments.length)}
-    <div className="planning-fold-body"><p className="footnote">Parcelas de compras no cartão ou boleto com vencimento neste mês. A data original permanece preservada; parcelas antigas não pagas ficam em Pendências anteriores.</p>
+    <div className="planning-fold-body"><p className="footnote">Parcelas de boleto com vencimento neste mês. Compras no cartão são agrupadas nas faturas automáticas, acima.</p>
     {sectionSort('installments')}
     <div className="table-wrap"><table><thead><tr><th>Compra / parcela</th><th>Vencimento</th><th>Previsto</th><th>Realizado</th><th>Situação</th><th>Ações</th></tr></thead><tbody>{sorted(installments,'installments',{date:i=>i.due_on,name:i=>i.description,amount:i=>i.amount_cents}).map(i=>{const paid=installmentPayment(i),remaining=Math.max(0,i.amount_cents-paid),category=data.purchases.find(p=>p.id===i.purchase_id)?.category_id;return <tr key={i.id}><td><strong>{i.description}</strong><small className="cell-sub">{i.number}ª parcela · {i.method==='card'?'Cartão '+(i.card_name||''):'Boleto'}</small>{tag(category)}</td><td>{new Date(i.due_on+'T12:00:00').toLocaleDateString('pt-BR')}</td><td>{money(i.amount_cents)}</td><td>{money(paid|| (i.paid_on?i.amount_cents:0))}</td><td><span className={'status '+(i.paid_on?'paid':'pending')}>{i.paid_on?'Pago':paid?'Parcial':i.due_on<iso()?'Atrasado':'Previsto'}</span></td><td>{!i.paid_on&&remaining>0?<button className="small-btn" onClick={()=>launchInstallment(i)}><Check size={13}/> Pagar</button>:<span className="status paid">Quitada</span>}</td></tr>})}</tbody></table>{!installments.length&&<div className="empty">Nenhuma parcela com vencimento neste mês.</div>}</div></div>
    </details>
