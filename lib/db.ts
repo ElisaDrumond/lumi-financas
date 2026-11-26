@@ -284,3 +284,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_payments (
 );
 CREATE INDEX IF NOT EXISTS idx_invoice_payments_card_month ON invoice_payments(card_id,period);
 CREATE INDEX IF NOT EXISTS idx_invoice_payments_date ON invoice_payments(paid_on);`);
+
+/** Planned payment/receipt month is separate from the legal due date. */
+db.exec(`CREATE TABLE IF NOT EXISTS obligation_plans(
+ kind TEXT NOT NULL CHECK(kind IN ('occurrence','transaction','installment','invoice')),
+ record_id INTEGER NOT NULL,
+ source_period TEXT NOT NULL,
+ status TEXT NOT NULL CHECK(status IN ('scheduled','unscheduled','archived')),
+ target_period TEXT,
+ changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ PRIMARY KEY(kind,record_id),
+ CHECK((status='scheduled' AND target_period IS NOT NULL) OR (status!='scheduled' AND target_period IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_obligation_plans_target ON obligation_plans(target_period,status);`);

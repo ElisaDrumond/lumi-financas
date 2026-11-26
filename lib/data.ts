@@ -23,6 +23,7 @@ export function readAll(period?:string) {
   occurrences: query(`SELECT o.*,r.description,r.type,r.behavior,r.goal_id,r.account_id,r.budget_label_id,r.amount_cents AS base_amount_cents,a.name AS account_name,c.name AS category_name,COALESCE((SELECT SUM(p.amount_cents) FROM payment_records p WHERE p.occurrence_id=o.id),0) AS paid_cents FROM recurring_occurrences o JOIN recurrings r ON r.id=o.recurring_id JOIN accounts a ON a.id=r.account_id LEFT JOIN categories c ON c.id=o.category_id ORDER BY o.due_on ASC`),
   payments: query('SELECT * FROM payment_records ORDER BY paid_on DESC'),
   invoicePayments: query('SELECT * FROM invoice_payments ORDER BY paid_on DESC,id DESC'),
+  obligationPlans: query('SELECT * FROM obligation_plans ORDER BY source_period,kind,record_id'),
   transactionPayments: query('SELECT * FROM transaction_payments ORDER BY paid_on DESC,id DESC'),
   adjustments: query('SELECT * FROM balance_adjustments ORDER BY adjusted_on DESC'),
   monthClosures: query('SELECT * FROM month_closures ORDER BY period DESC'),
