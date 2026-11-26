@@ -1,6 +1,7 @@
 'use client';
 import MoneyInput from './MoneyInput';
 import FinancialSummary from './FinancialSummary';
+import MonthTimeline from './MonthTimeline';
 import MonthClosing from './MonthClosing';
 import MonthlyBudgets from './MonthlyBudgets';
 import CardInvoices from './CardInvoices';
@@ -23,6 +24,7 @@ export default function Planning({data,refresh}:Props){
  const [account,setAccount]=useState('');
  const [typeFilter,setTypeFilter]=useState<'all'|'income'|'expense'>('all');
  const [period,setPeriod]=useState(iso().slice(0,7));
+ const changePeriod=(nextPeriod:string)=>{setPeriod(nextPeriod);refresh(nextPeriod).catch(()=>setErr('Falha ao carregar o mês.'));};
  const [sorts,setSorts]=useState<Record<string,SortKey>>({carryover:'date-asc',receipts:'date-asc',occurrences:'date-asc',installments:'date-asc',oneoffs:'date-asc',recurrings:'name-asc'});
  const sortValue=(section:string)=>sorts[section]||'date-asc';
  const changeSort=(section:string,value:SortKey)=>setSorts(prev=>({...prev,[section]:value}));
@@ -85,8 +87,9 @@ export default function Planning({data,refresh}:Props){
  const status=(r:Row)=>r.status==='paid'?(isGoal(r)?'Aportado':isIncome(r)?'Recebido':'Pago'):r.status==='partial'?(isIncome(r)?'Recebido parcialmente':'Pago parcialmente'):r.status==='cancelled'?'Ignorado':r.due_on<iso()?'Atrasado':'Previsto';
  return <>
   <section className="panel glass full">{err&&!dialog&&<p className="error" role="alert">{err}</p>}<div className="panel-header"><div><h3>Planejamento mensal</h3><p>Previsões, pagamentos e recebimentos sem perder o histórico.</p></div><button className="primary-btn" onClick={()=>launch('new')}><Plus size={16}/> Nova recorrência</button></div>
-   <div className="planning-toolbar"><label>Mês de referência <MonthPicker value={period} onChange={p=>{setPeriod(p);refresh(p).catch(()=>setErr('Falha ao carregar o mês.'))}}/></label><label>Conta <select aria-label="Filtrar conta" value={account} onChange={e=>setAccount(e.target.value)}><option value="">Todas as contas</option>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><div className="finance-type-filter" role="group" aria-label="Filtrar receitas e despesas do planejamento">{(['all','income','expense'] as const).map(kind=><button key={kind} type="button" aria-pressed={typeFilter===kind} className={typeFilter===kind?'active':''} onClick={()=>setTypeFilter(kind)}>{kind==='all'?'Todos':kind==='income'?'Receitas':'Despesas'}</button>)}</div><span className="pill">{items.length} ocorrências neste mês</span></div>
+   <div className="planning-toolbar"><label>Mês de referência <MonthPicker value={period} onChange={changePeriod}/></label><label>Conta <select aria-label="Filtrar conta" value={account} onChange={e=>setAccount(e.target.value)}><option value="">Todas as contas</option>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><div className="finance-type-filter" role="group" aria-label="Filtrar receitas e despesas do planejamento">{(['all','income','expense'] as const).map(kind=><button key={kind} type="button" aria-pressed={typeFilter===kind} className={typeFilter===kind?'active':''} onClick={()=>setTypeFilter(kind)}>{kind==='all'?'Todos':kind==='income'?'Receitas':'Despesas'}</button>)}</div><span className="pill">{items.length} ocorrências neste mês</span></div>
    <FinancialSummary summary={sums}/>
+   <MonthTimeline period={period} todayPeriod={iso().slice(0,7)} closedPeriods={data.monthClosures.map(c=>String(c.period))} projectedCents={sums.projected} budgetAdditionalCents={sums.budgetAdditional??0} onChange={changePeriod}/>
    <MonthlyBudgets data={data} period={period} account="" refresh={refresh}/>
    <CardInvoices data={data} period={period} account={account} refresh={refresh}/>
    <MonthClosing period={period} refresh={refresh} closures={data.monthClosures||[]} closureAccounts={data.monthClosureAccounts||[]} closurePending={data.monthClosurePending||[]} closureBudgets={data.monthClosureBudgets||[]}/>

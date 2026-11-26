@@ -324,3 +324,27 @@
 .installment-purchase-total .installment-month-reference{font-size:10px;margin-top:5px}
 .purchase-filter-empty{text-align:center;padding:28px 15px;font-size:13px;color:#9689a7}
 @media(max-width:650px){.purchase-status-filter{width:100%}.installment-purchase-total{max-width:100%}}
+
+/* Month-to-month financial continuity — status is not a promise of future cash. */
+.lumi-month-timeline{margin:18px 0 28px;padding:19px 22px;border:1px solid rgba(207,194,239,.55);border-radius:24px;background:linear-gradient(120deg,rgba(255,250,255,.82),rgba(238,248,255,.84));display:grid;gap:15px;min-width:0}
+.lumi-month-timeline-heading h4{margin:0 0 5px;font-size:17px;color:#4a3d5e}
+.lumi-month-timeline-heading p{margin:0;color:#9b8fac;font-size:12px;line-height:1.5}
+.lumi-month-timeline-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.lumi-month-step{appearance:none;text-align:left;font:inherit;background:rgba(255,255,255,.63);border:1px solid #ebe3f6;border-radius:17px;padding:16px;display:flex;flex-direction:column;align-items:flex-start;gap:9px;color:#5c5071;cursor:pointer;min-width:0;transition:border-color .2s,background .2s,transform .2s}
+.lumi-month-step:hover{background:rgba(255,255,255,.91);border-color:#bfaaf0;transform:translateY(-1px)}
+.lumi-month-step:focus-visible{outline:3px solid #a58be9;outline-offset:3px}
+.lumi-month-step.is-selected{background:linear-gradient(135deg,rgba(243,238,255,.97),rgba(246,250,255,.97));border:2px solid #ad96ed;padding:15px}
+.lumi-month-step.is-closed{border-color:#c8e8d9}
+.lumi-month-step-position{letter-spacing:.1em;font-size:10px;font-weight:800;color:#9d89bf}
+.lumi-month-step-name{text-transform:capitalize;font-weight:750;font-size:15px;color:#4d4162}
+.lumi-month-step-status{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;background:#f1eafa;color:#8670ac;font-size:11px;font-weight:650}
+.lumi-month-step.is-closed .lumi-month-step-status{background:#e5f7ed;color:#49866d}
+.lumi-month-step-amount{display:flex;flex-direction:column;gap:3px;font-size:21px;color:#438c74;font-weight:800;line-height:1.2}
+.lumi-month-step-amount.is-negative{color:#ba697e}
+.lumi-month-step-amount small{font-size:10px;color:#9387a5;font-weight:550}
+.lumi-month-step-action{display:inline-flex;align-items:center;gap:5px;color:#9882ca;font-size:11px;font-weight:700;margin-top:auto}
+.lumi-month-timeline-note{display:flex;gap:12px;align-items:flex-start;border-top:1px solid rgba(206,197,222,.55);padding:14px 2px 0;color:#9582b6}
+.lumi-month-timeline-note>svg{flex-shrink:0;margin-top:2px}
+.lumi-month-timeline-note strong{font-size:13px;color:#5c4b74}
+.lumi-month-timeline-note p{font-size:12px;line-height:1.6;color:#9488a5;margin:5px 0 0}
+@media(max-width:750px){.lumi-month-timeline{padding:15px 12px;gap:11px}.lumi-month-timeline-grid{gap:7px}.lumi-month-step{padding:11px 8px;border-radius:12px;gap:7px}.lumi-month-step.is-selected{padding:10px 7px}.lumi-month-step-position{font-size:8px;letter-spacing:.03em}.lumi-month-step-name{font-size:12px}.lumi-month-step-status{font-size:9px;padding:4px 6px}.lumi-month-step-amount{font-size:15px}.lumi-month-step-action{font-size:10px}.lumi-month-timeline-heading h4{font-size:15px}}
