@@ -55,8 +55,8 @@ export function cardCommitment(data:InvoiceLedger,cardId:number):number{
 export function firstCardDueOn(purchasedOn:string,closingDay:number,dueDay:number):string{
  const [year,month,day]=purchasedOn.split('-').map(Number);
  if(!year||month<1||month>12||day<1||day>31||closingDay<1||closingDay>28||dueDay<1||dueDay>28)throw Error('Data ou ciclo do cartão inválidos.');
- // If the statement has already closed, shift the next statement forward.
- const offset=day>closingDay?1:0;
+ // Purchases ON the closing day already belong to the following statement.
+ const offset=day>=closingDay?1:0;
  const close=new Date(Date.UTC(year,month-1+offset,closingDay));
  const due=new Date(Date.UTC(close.getUTCFullYear(),close.getUTCMonth()+(dueDay<=closingDay?1:0),dueDay));
  return due.toISOString().slice(0,10);
